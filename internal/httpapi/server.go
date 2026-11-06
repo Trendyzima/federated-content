@@ -54,6 +54,7 @@ func (s *Server) webfinger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actorURL := s.actorURL()
+	w.Header().Set("Content-Type", "application/jrd+json; charset=utf-8")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"subject": expected,
 		"aliases": []string{actorURL},
@@ -88,8 +89,6 @@ func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
 		"summary": s.cfg.ServiceActorSummary,
 		"inbox": s.actorURL() + "/inbox",
 		"outbox": s.actorURL() + "/outbox",
-		"followers": s.actorURL() + "/followers",
-		"following": s.actorURL() + "/following",
 		"url": s.cfg.PublicBaseURL,
 	}
 	if s.cfg.PublicKeyPEM != "" {
@@ -152,7 +151,9 @@ func writeActivityJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	}
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
