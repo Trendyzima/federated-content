@@ -34,6 +34,9 @@ func TestWebFingerReturnsConfiguredActor(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "https://federation.testagram.site/users/testagram") {
 		t.Fatalf("unexpected WebFinger response: %d %s", rec.Code, rec.Body.String())
 	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/jrd+json") {
+		t.Fatalf("expected JRD content type, got %q", got)
+	}
 }
 
 func TestWebFingerDoesNotClaimUnknownUsers(t *testing.T) {
@@ -61,6 +64,19 @@ func TestActorReturnsActivityPubDocument(t *testing.T) {
 	testServer().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"type\": \"Application\"") {
 		t.Fatalf("unexpected actor response: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, activityJSON) {
+		t.Fatalf("expected ActivityPub content type, got %q", got)
+	}
+}
+
+func TestOutboxReturnsEmptyOrderedCollection(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/users/testagram/outbox", nil)
+	req.Header.Set("Accept", "application/activity+json")
+	testServer().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"OrderedCollection\"") {
+		t.Fatalf("unexpected outbox response: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
