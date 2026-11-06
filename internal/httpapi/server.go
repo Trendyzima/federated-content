@@ -41,9 +41,13 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
-	// The first release has no external runtime dependency. Readiness becomes
-	// dependency-aware when durable storage and the queue are introduced.
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	// Keep the service out of production routing until it can safely accept and
+	// persist federation traffic. Liveness remains healthy so the process can
+	// be inspected during preview, but readiness must not imply protocol safety.
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+		"status": "preview_only",
+		"reason": "HTTP Signature verification and durable inbox/outbox processing are not enabled",
+	})
 }
 
 func (s *Server) webfinger(w http.ResponseWriter, r *http.Request) {
