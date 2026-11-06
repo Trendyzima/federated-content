@@ -24,7 +24,7 @@ The service must not create a second canonical Testagram account store. It may o
 
 ## Run locally
 
-Requirements: Go 1.23+ and Docker (optional).
+Requirements: Go 1.27.3+ and Docker (optional).
 
     cp .env.example .env
     go test ./...
