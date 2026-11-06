@@ -62,7 +62,7 @@ func TestActorReturnsActivityPubDocument(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users/testagram", nil)
 	req.Header.Set("Accept", "application/activity+json")
 	testServer().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"type\": \"Application\"") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"type\":\"Application\"") {
 		t.Fatalf("unexpected actor response: %d %s", rec.Code, rec.Body.String())
 	}
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, activityJSON) {
