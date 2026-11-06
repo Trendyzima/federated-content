@@ -27,6 +27,14 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestReadinessRemainsDisabledUntilSecureFederationIsImplemented(t *testing.T) {
+	rec := httptest.NewRecorder()
+	testServer().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "preview_only") {
+		t.Fatalf("expected preview-only 503 readiness, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestWebFingerReturnsConfiguredActor(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/webfinger?resource=acct:testagram@testagram.site", nil)
