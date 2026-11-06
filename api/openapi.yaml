@@ -1,0 +1,101 @@
+openapi: 3.1.0
+info:
+  title: Testagram Federated Content API
+  version: 0.1.0
+  description: Public ActivityPub discovery and actor endpoints. Inbox ingestion is disabled in this release.
+servers:
+  - url: https://federation.testagram.site
+paths:
+  /healthz:
+    get:
+      operationId: health
+      summary: Process liveness
+      responses:
+        "200":
+          description: Process is alive
+  /readyz:
+    get:
+      operationId: readiness
+      summary: Service readiness
+      responses:
+        "200":
+          description: Ready; the initial release has no external dependencies
+  /.well-known/webfinger:
+    get:
+      operationId: webfinger
+      summary: Resolve the configured service actor
+      parameters:
+        - in: query
+          name: resource
+          required: true
+          schema:
+            type: string
+            example: acct:testagram@testagram.site
+      responses:
+        "200":
+          description: JRD account descriptor
+          content:
+            application/jrd+json:
+              schema:
+                type: object
+        "404":
+          description: Account is not hosted by this service
+  /users/{username}:
+    get:
+      operationId: getActor
+      summary: Fetch the configured ActivityPub actor
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Accept
+          required: true
+          schema:
+            type: string
+            example: application/activity+json
+      responses:
+        "200":
+          description: ActivityPub actor document
+          content:
+            application/activity+json:
+              schema:
+                type: object
+        "404":
+          description: Actor not found
+        "406":
+          description: ActivityPub Accept header required
+  /users/{username}/outbox:
+    get:
+      operationId: getOutbox
+      summary: Fetch the configured actor's empty initial outbox
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Empty OrderedCollection
+          content:
+            application/activity+json:
+              schema:
+                type: object
+        "404":
+          description: Actor not found
+  /users/{username}/inbox:
+    post:
+      operationId: receiveActivity
+      summary: ActivityPub inbox, disabled until signature verification ships
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema:
+            type: string
+      responses:
+        "501":
+          description: Inbox ingestion is not enabled in this release
