@@ -63,3 +63,11 @@ The service listens on :8081 by default.
 
 - [XClone frontend](https://github.com/Trendyzima/XClone-9b4dz1-9b4dz1-8936-20260809tr)
 - [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-)
+
+## Testagram platform integration
+
+This service is the federation protocol component in the five-repository Testagram platform. XClone remains the only frontend. Browser/mobile clients call the public Testagram Backend API; they never call this service directly. Backend owns canonical local accounts, posts, permissions and media ownership. This service is intended to own ActivityPub protocol state and remote actor/delivery state only.
+
+The current release is a protocol foundation, not a production federation server: WebFinger and one configured service actor are available, the outbox is empty, and inbox POST deliberately returns HTTP 501 until signature verification and durable inbox/outbox storage are implemented. Keep this container private and do not route public ActivityPub traffic to it yet.
+
+The Data Centre repository can build/run the container under its optional federation-preview Compose profile. The container image is published as ghcr.io/trendyzima/testagram-federation after a successful push to main. Do not enable public DNS/routing based solely on image availability.
