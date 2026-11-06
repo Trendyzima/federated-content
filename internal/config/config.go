@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
+
+var actorUsernamePattern = regexp.MustCompile(`^[a-z0-9_][a-z0-9_.-]{0,63}$`)
 
 type Config struct {
 	AppEnv               string
@@ -33,11 +36,18 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("HTTP_ADDR, INSTANCE_DOMAIN and SERVICE_ACTOR_USERNAME must not be empty")
 	}
 	u, err := url.ParseRequestURI(cfg.PublicBaseURL)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && !(cfg.AppEnv != "production" && u.Scheme == "http")) {
-		return Config{}, fmt.Errorf("PUBLIC_BASE_URL must be an absolute HTTPS URL (HTTP is allowed outside production)")
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return Config{}, fmt.Errorf("PUBLIC_BASE_URL must be an absolute origin URL without credentials, path, query or fragment")
 	}
-	if strings.ContainsAny(cfg.ServiceActorUsername, "@/ ") {
-		return Config{}, fmt.Errorf("SERVICE_ACTOR_USERNAME must be a simple username")
+	if u.Scheme != "https" && !((cfg.AppEnv == "development" || cfg.AppEnv == "test") && u.Scheme == "http") {
+		return Config{}, fmt.Errorf("PUBLIC_BASE_URL must use HTTPS (HTTP is allowed only in development and test)")
+	}
+	hostname := strings.ToLower(u.Hostname())
+	if hostname == "" || (hostname != cfg.InstanceDomain && !strings.HasSuffix(hostname, "."+cfg.InstanceDomain)) {
+		return Config{}, fmt.Errorf("PUBLIC_BASE_URL host must be INSTANCE_DOMAIN or one of its subdomains")
+	}
+	if !actorUsernamePattern.MatchString(cfg.ServiceActorUsername) || cfg.ServiceActorUsername == "." || cfg.ServiceActorUsername == ".." {
+		return Config{}, fmt.Errorf("SERVICE_ACTOR_USERNAME must be 1-64 lowercase letters, digits, underscores, dots or hyphens and start with a letter, digit or underscore")
 	}
 	return cfg, nil
 }
