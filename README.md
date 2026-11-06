@@ -12,9 +12,9 @@ Federation is asynchronous. Local publishing must continue when remote delivery 
 
 ## Current implementation status
 
-The first foundation release provides a Go HTTP service with health/readiness endpoints, WebFinger discovery, an ActivityPub actor representation, environment-based configuration, Docker build, Compose development setup, and CI.
+The first foundation release provides a Go HTTP service with health/readiness endpoints, WebFinger discovery for one configured service actor, an ActivityPub actor representation, environment-based configuration, Docker build, Compose development setup, and CI.
 
-Inbox processing is intentionally disabled until HTTP Signature verification and durable idempotent processing are implemented. This is an integration foundation, not a production-ready federation server.
+This first slice does not yet resolve arbitrary Testagram user handles. That requires the canonical identity adapter from Testagram Backend. Inbox processing is intentionally disabled until HTTP Signature verification and durable idempotent processing are implemented. This is an integration foundation, not a production-ready federation server.
 
 ## Architecture
 
@@ -34,9 +34,9 @@ The service listens on :8081 by default.
 
 - GET /healthz — process liveness.
 - GET /readyz — configuration/dependency readiness.
-- GET /.well-known/webfinger?resource=acct:alice@testagram.site — WebFinger.
-- GET /users/alice — ActivityPub actor (requires ActivityPub Accept header).
-- POST /users/alice/inbox — deliberately returns 501 until secure inbox processing is enabled.
+- GET /.well-known/webfinger?resource=acct:testagram@testagram.site — configured service actor discovery.
+- GET /users/testagram — ActivityPub actor (requires ActivityPub Accept header).
+- POST /users/testagram/inbox — deliberately returns 501 until secure inbox processing is enabled.
 
 ## Security policy
 
