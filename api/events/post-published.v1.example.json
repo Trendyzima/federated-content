@@ -1,0 +1,10 @@
+{
+  "event_id": "8b9c7b5a-ec7e-4ec5-9f57-93b0f4f6e82a",
+  "event_type": "testagram.post.published",
+  "schema_version": 1,
+  "occurred_at": "2026-11-06T12:00:00Z",
+  "actor_id": "usr_01JEXAMPLE",
+  "object_id": "post_01JEXAMPLE",
+  "visibility": "public",
+  "federation_eligible": true
+}
