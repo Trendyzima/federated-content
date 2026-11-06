@@ -82,19 +82,19 @@ func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
 			"https://www.w3.org/ns/activitystreams",
 			"https://w3id.org/security/v1",
 		},
-		"id": s.actorURL(),
-		"type": "Application",
+		"id":                s.actorURL(),
+		"type":              "Application",
 		"preferredUsername": s.cfg.ServiceActorUsername,
-		"name": s.cfg.ServiceActorName,
-		"summary": s.cfg.ServiceActorSummary,
-		"inbox": s.actorURL() + "/inbox",
-		"outbox": s.actorURL() + "/outbox",
-		"url": s.cfg.PublicBaseURL,
+		"name":              s.cfg.ServiceActorName,
+		"summary":           s.cfg.ServiceActorSummary,
+		"inbox":             s.actorURL() + "/inbox",
+		"outbox":            s.actorURL() + "/outbox",
+		"url":               s.cfg.PublicBaseURL,
 	}
 	if s.cfg.PublicKeyPEM != "" {
 		actor["publicKey"] = map[string]string{
-			"id": s.actorURL() + "#main-key",
-			"owner": s.actorURL(),
+			"id":           s.actorURL() + "#main-key",
+			"owner":        s.actorURL(),
 			"publicKeyPem": s.cfg.PublicKeyPEM,
 		}
 	}
@@ -113,10 +113,10 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeActivityJSON(w, http.StatusOK, map[string]any{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"id": s.actorURL() + "/outbox",
-		"type": "OrderedCollection",
-		"totalItems": 0,
+		"@context":     "https://www.w3.org/ns/activitystreams",
+		"id":           s.actorURL() + "/outbox",
+		"type":         "OrderedCollection",
+		"totalItems":   0,
 		"orderedItems": []any{},
 	})
 }
