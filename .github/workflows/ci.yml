@@ -19,7 +19,7 @@ jobs:
           go-version: "1.23.x"
           cache: true
       - name: Format
-        run: gofmt -w .
+        run: gofmt -w $(find . -name '*.go' -type f)
       - name: Vet
         run: go vet ./...
       - name: Test
