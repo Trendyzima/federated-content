@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://federation.testagram.site/schemas/post-published.v1.schema.json",
+  "title": "Testagram post published event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "actor_id",
+    "object_id",
+    "visibility",
+    "federation_eligible"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "event_type": { "const": "testagram.post.published" },
+    "schema_version": { "const": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "actor_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "object_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "visibility": {
+      "type": "string",
+      "enum": ["public", "unlisted", "followers", "direct"]
+    },
+    "federation_eligible": { "type": "boolean" }
+  }
+}
