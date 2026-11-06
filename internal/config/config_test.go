@@ -43,3 +43,56 @@ func TestLoadRejectsMalformedActorUsername(t *testing.T) {
 		t.Fatal("expected invalid username error")
 	}
 }
+
+func TestLoadRejectsPublicURLWithQueryOrFragment(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://federation.testagram.site?redirect=https://evil.example",
+		"https://federation.testagram.site#fragment",
+		"https://user:password@federation.testagram.site",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			setValidEnvironment(t)
+			t.Setenv("PUBLIC_BASE_URL", rawURL)
+			if _, err := Load(); err == nil {
+				t.Fatalf("expected invalid public URL %q to be rejected", rawURL)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsUnrelatedFederationHost(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("PUBLIC_BASE_URL", "https://federation.attacker.example")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected public host outside INSTANCE_DOMAIN to be rejected")
+	}
+}
+
+func TestLoadAllowsFederationSubdomain(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("PUBLIC_BASE_URL", "https://federation.testagram.site")
+	if _, err := Load(); err != nil {
+		t.Fatalf("expected federation subdomain to be allowed, got %v", err)
+	}
+}
+
+func TestLoadRejectsNonDevelopmentHTTP(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("APP_ENV", "staging")
+	t.Setenv("PUBLIC_BASE_URL", "http://federation.testagram.site")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected HTTP outside development/test to be rejected")
+	}
+}
+
+func TestLoadRejectsPathLikeActorUsernames(t *testing.T) {
+	for _, username := range []string{"../admin", "bad/handle", "bad\\handle", "bad handle", "..", ".", "name?x=1"} {
+		t.Run(username, func(t *testing.T) {
+			setValidEnvironment(t)
+			t.Setenv("SERVICE_ACTOR_USERNAME", username)
+			if _, err := Load(); err == nil {
+				t.Fatalf("expected invalid username %q to be rejected", username)
+			}
+		})
+	}
+}
