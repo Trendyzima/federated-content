@@ -2,10 +2,12 @@
 
 Independent ActivityPub federation service for the Testagram platform.
 
-This repository is the federation boundary in the three-repository architecture:
+This repository is the federation component in Testagram's five-repository architecture:
 
-- **XClone** is the web/mobile client and presentation layer.
-- **Testagram Backend** owns canonical Testagram accounts, local posts, authorization, and application data.
+- **XClone** is the only web/mobile frontend and presentation layer.
+- **Testagram Backend** owns canonical accounts, authentication, local posts, social graph, authorization, and application APIs.
+- **The Algorithm** ranks authorized feed candidates supplied by Testagram Backend; it is a private backend service, never a browser-facing API.
+- **Testagram Data Centre** owns VPS/runtime orchestration, edge routing, node/host operations, and storage infrastructure; it does not become the canonical owner of social records.
 - **Federated Content** owns ActivityPub protocol endpoints, remote actor discovery, inbox/outbox processing, and outbound delivery.
 
 Federation is asynchronous. Local publishing must continue when remote delivery is unavailable.
@@ -18,13 +20,13 @@ This first slice does not yet resolve arbitrary Testagram user handles. That req
 
 ## Architecture
 
-XClone client -> Testagram Backend (canonical identity and local content) -> authenticated internal API / durable events -> Federated Content -> ActivityPub peers.
+XClone (single frontend) -> Testagram Backend (canonical identity, local content and authorization) -> Federated Content (protocol boundary) -> ActivityPub peers.\n\nFor the home feed, XClone calls Testagram Backend; Backend sends only authorized candidate batches to The Algorithm and owns pagination and final authorization. Testagram Data Centre deploys and routes these services on the private runtime network.
 
 The service must not create a second canonical Testagram account store. It may own protocol-specific actor keys, remote actor cache, delivery receipts, inbox deduplication, and federation job state.
 
 ## Run locally
 
-Requirements: Go 1.23+ and Docker (optional).
+Requirements: Go 1.27.3+ and Docker (optional).
 
     cp .env.example .env
     go test ./...
@@ -62,7 +64,7 @@ The service listens on :8081 by default.
 ## Related repositories
 
 - [XClone frontend](https://github.com/Trendyzima/XClone-9b4dz1-9b4dz1-8936-20260809tr)
-- [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-)
+- [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-)\n- [The Algorithm](https://github.com/Trendyzima/the-algorithm)\n- [Testagram Data Centre](https://github.com/Trendyzima/Testagram-data-centre-)
 
 ## Testagram platform integration
 
