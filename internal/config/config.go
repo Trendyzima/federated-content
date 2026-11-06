@@ -8,14 +8,14 @@ import (
 )
 
 type Config struct {
-	AppEnv              string
-	HTTPAddr            string
-	PublicBaseURL       string
-	InstanceDomain      string
+	AppEnv               string
+	HTTPAddr             string
+	PublicBaseURL        string
+	InstanceDomain       string
 	ServiceActorUsername string
-	ServiceActorName    string
-	ServiceActorSummary string
-	PublicKeyPEM        string
+	ServiceActorName     string
+	ServiceActorSummary  string
+	PublicKeyPEM         string
 }
 
 func Load() (Config, error) {
