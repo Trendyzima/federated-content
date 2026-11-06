@@ -24,7 +24,7 @@ jobs:
           unformatted="$(gofmt -l $(find . -type f -name '*.go'))"
           if [[ -n "$unformatted" ]]; then
             echo "The following Go files need gofmt:"
-            printf '%s\\n' "$unformatted"
+            printf '%s\n' "$unformatted"
             exit 1
           fi
       - name: Vet
