@@ -25,6 +25,34 @@ func TestLoadDefaultsAndNormalizesActorName(t *testing.T) {
 	}
 }
 
+func TestDeliveryWorkerIsOptIn(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeliveryWorkerEnabled {
+		t.Fatal("delivery worker must remain disabled by default")
+	}
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.DeliveryWorkerEnabled {
+		t.Fatal("explicitly enabled delivery worker was not enabled")
+	}
+}
+
+func TestDeliveryWorkerRejectsMalformedEnableFlag(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected malformed worker flag to be rejected")
+	}
+}
+
 func TestProductionRejectsHTTPBaseURL(t *testing.T) {
 	setValidEnvironment(t)
 	t.Setenv("APP_ENV", "production")
