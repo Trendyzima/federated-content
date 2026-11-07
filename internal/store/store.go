@@ -122,6 +122,16 @@ func (s *Store) ActorByUserID(ctx context.Context, id string) (Actor,error) { re
 func (s *Store) ActorByUsername(ctx context.Context, username string) (Actor,error) { return s.getActor(ctx,"username",username) }
 func (s *Store) ActorByURI(ctx context.Context, uri string) (Actor,error) { return s.getActor(ctx,"actor_uri",uri) }
 
+func (s *Store) StoreRemoteActor(ctx context.Context, actorURI,keyID,keyPEM,inboxURL,sharedInboxURL string) error {
+	if actorURI==""||keyID==""||keyPEM==""||inboxURL=="" {return errors.New("remote actor signing identity and inbox are required")}
+	_,err:=s.db.ExecContext(ctx,`INSERT INTO remote_actors (actor_uri,public_key_id,public_key_pem,inbox_url,shared_inbox_url,fetched_at)
+		VALUES ($1,$2,$3,$4,$5,NOW()) ON CONFLICT (actor_uri) DO UPDATE SET
+		public_key_id=EXCLUDED.public_key_id,public_key_pem=EXCLUDED.public_key_pem,
+		inbox_url=EXCLUDED.inbox_url,shared_inbox_url=EXCLUDED.shared_inbox_url,fetched_at=NOW()`,
+		actorURI,keyID,keyPEM,inboxURL,sharedInboxURL)
+	return err
+}
+
 func (s *Store) StoreInbox(ctx context.Context, activityID, actorURI, recipientUsername, activityType string, payload []byte) (bool,error) {
 	if activityID == "" || actorURI == "" || recipientUsername == "" || activityType == "" || !json.Valid(payload) {
 		return false, errors.New("invalid inbox activity")
