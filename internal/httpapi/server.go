@@ -98,7 +98,7 @@ func (s *Server) webfinger(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "federation_identity_unavailable", "Local actor discovery is temporarily unavailable")
 			return
 		}
-		actorURL = s.cfg.PublicBaseURL + "/users/" + url.PathEscape(profile.UserID)
+		actorURL = s.cfg.PublicBaseURL + "/users/" + url.PathEscape(profile.Handle)
 		if _, err := s.state.EnsureActor(ctx, profile.UserID, profile.Handle, actorURL, profile.DisplayName, profile.Summary); err != nil {
 			writeError(w, http.StatusServiceUnavailable, "federation_actor_unavailable", "Local actor could not be provisioned")
 			return
