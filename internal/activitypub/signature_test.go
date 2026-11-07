@@ -61,6 +61,39 @@ func TestVerifyRequestAcceptsValidRSASignatureAndDigest(t *testing.T) {
 	}
 }
 
+func TestSignRequestProducesVerifiableSignature(t *testing.T) {
+	private, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := "https://federation.testagram.site/users/alice"
+	keyID := owner + "#main-key"
+	privatePEM := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(private)}))
+	publicDER, err := x509.MarshalPKIXPublicKey(&private.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}))
+	body := []byte(`{"id":"https://federation.testagram.site/activities/1","type":"Create"}`)
+	now := time.Now().UTC().Truncate(time.Second)
+	req := httptest.NewRequest(http.MethodPost, "https://remote.example/inbox?shared=1", strings.NewReader(string(body)))
+	if err := SignRequest(req, body, keyID, privatePEM, now); err != nil {
+		t.Fatal(err)
+	}
+	if req.Header.Get("Date") != now.Format(http.TimeFormat) || !verifyDigest(req.Header.Get("Digest"), body) {
+		t.Fatalf("signer emitted invalid Date or Digest headers: %#v", req.Header)
+	}
+	verified, err := VerifyRequest(context.Background(), req, body, fixedResolver{
+		key: PublicKey{ID: keyID, Owner: owner, PEM: publicPEM},
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified.ID != keyID {
+		t.Fatalf("verified key ID=%q want=%q", verified.ID, keyID)
+	}
+}
+
 func TestVerifyRequestRejectsTamperedDigestAndExpiredDate(t *testing.T) {
 	private, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
