@@ -59,7 +59,7 @@ func TestListOutboxUsesVersionedPrivateAPIAndDurableCursor(t *testing.T) {
 			t.Errorf("missing authenticated versioned request headers")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"data":{"events":[{"$id":"event-2","event_type":"testagram.post.published","actor_id":"user-1","object_id":"post-2","payload":{"content":"hello"},"created_at":"2026-11-07T10:00:00Z"}],"next_cursor":"cursor-2","has_more":false},"error":null}`))
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"events":[{"$id":"event-2","event_type":"testagram.post.published","actor_id":"user-1","object_id":"post-2","payload":{"content":"hello"},"created_at":"2026-11-07T10:00:00Z"}],"next_cursor":"Y3Vyc29yLTI","has_more":false},"error":null}`))
 	}))
 	defer server.Close()
 
@@ -71,7 +71,7 @@ func TestListOutboxUsesVersionedPrivateAPIAndDurableCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Events) != 1 || page.Events[0].ID != "event-2" || page.NextCursor != "cursor-2" || page.HasMore {
+	if len(page.Events) != 1 || page.Events[0].ID != "event-2" || page.NextCursor != "Y3Vyc29yLTI" || page.HasMore {
 		t.Fatalf("unexpected outbox page: %+v", page)
 	}
 	if _, err := client.ListOutbox(context.Background(), "", 100); err == nil {
