@@ -126,7 +126,7 @@ func TestLocalActorEndpointsRecheckFederationOptIn(t *testing.T) {
 				"ok": true,
 				"data": map[string]any{
 					"user_id": userID, "handle": handle, "display_name": "Revocable",
-					"summary": "Opt-in must be checked on every protocol endpoint",
+					"summary":            "Opt-in must be checked on every protocol endpoint",
 					"federation_enabled": true,
 				},
 				"error": nil,
