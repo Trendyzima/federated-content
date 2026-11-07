@@ -22,6 +22,7 @@ import (
 var schema string
 
 const maxDeliveryAttempts = 12
+const maxInboxAttempts = 12
 
 // schemaMigrationLock serializes embedded schema application across processes.
 // Multiple service replicas may start against an empty database simultaneously.
@@ -40,6 +41,17 @@ type Actor struct {
 	PrivateKeyPEM string
 	DisplayName   string
 	Summary       string
+}
+
+
+type InboxActivity struct {
+	ActivityID       string
+	ActorURI         string
+	RecipientUsername string
+	ActivityType     string
+	Payload          json.RawMessage
+	Attempts         int
+	LeaseToken       string
 }
 
 type Delivery struct {
@@ -476,5 +488,96 @@ func (s *Store) GetOutboxObject(ctx context.Context, actorURI, objectURI string)
 	err := s.db.QueryRowContext(ctx, `SELECT payload->'object' FROM outbox_activities
 		WHERE actor_uri=$1 AND payload->'object'->>'id'=$2`, actorURI, objectURI).Scan(&object)
 	return json.RawMessage(object), err
+}
+
+
+
+func (s *Store) ClaimInbox(ctx context.Context, limit int, lease time.Duration) ([]InboxActivity, error) {
+	if limit < 1 || limit > 100 || lease < 15*time.Second || lease > 5*time.Minute {
+		return nil, errors.New("invalid inbox claim bounds")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT activity_id,actor_uri,recipient_username,activity_type,payload,attempts
+		FROM inbox_activities
+		WHERE attempts < $1 AND (
+			(state IN ('accepted','retry') AND available_at<=NOW()) OR
+			(state='processing' AND lease_until<NOW())
+		)
+		ORDER BY available_at,received_at,activity_id
+		FOR UPDATE SKIP LOCKED LIMIT $2`, maxInboxAttempts, limit)
+	if err != nil {
+		return nil, err
+	}
+	var activities []InboxActivity
+	for rows.Next() {
+		var activity InboxActivity
+		if err := rows.Scan(&activity.ActivityID, &activity.ActorURI, &activity.RecipientUsername, &activity.ActivityType, &activity.Payload, &activity.Attempts); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		activities = append(activities, activity)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for i := range activities {
+		token := make([]byte, 24)
+		if _, err := rand.Read(token); err != nil {
+			return nil, err
+		}
+		activities[i].LeaseToken = hex.EncodeToString(token)
+		_, err := tx.ExecContext(ctx, `UPDATE inbox_activities SET state='processing',attempts=attempts+1,
+			lease_token=$2,lease_until=NOW()+($3 * INTERVAL '1 second')
+			WHERE activity_id=$1`, activities[i].ActivityID, activities[i].LeaseToken, int(lease.Seconds()))
+		if err != nil {
+			return nil, err
+		}
+		activities[i].Attempts++
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return activities, nil
+}
+
+func (s *Store) AckInbox(ctx context.Context, activityID, token string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET state='processed',processed_at=NOW(),
+		lease_token=NULL,lease_until=NULL,last_error=''
+		WHERE activity_id=$1 AND state='processing' AND lease_token=$2`, activityID, token)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 {
+		return errors.New("inbox lease is no longer owned")
+	}
+	return err
+}
+
+func (s *Store) FailInbox(ctx context.Context, activityID, token, reason string, permanent bool) error {
+	reason = strings.TrimSpace(reason)
+	if len(reason) > 1000 {
+		reason = reason[:1000]
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET
+		state=CASE WHEN $3 THEN 'rejected' WHEN attempts >= $4 THEN 'dead_letter' ELSE 'retry' END,
+		available_at=CASE WHEN $3 OR attempts >= $4 THEN available_at ELSE NOW()+((1 << LEAST(attempts,10)) * INTERVAL '1 second') END,
+		lease_token=NULL,lease_until=NULL,last_error=$5
+		WHERE activity_id=$1 AND state='processing' AND lease_token=$2`,
+		activityID, token, permanent, maxInboxAttempts, reason)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 {
+		return errors.New("inbox lease is no longer owned")
+	}
+	return err
 }
 
