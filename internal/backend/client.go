@@ -42,7 +42,17 @@ func New(baseURL, token string, client *http.Client) (*Client,error) {
 func (c *Client) ResolveActor(ctx context.Context, handle string) (ActorProfile,error) {
 	handle=strings.ToLower(strings.TrimSpace(handle))
 	if handle==""||len(handle)>30 { return ActorProfile{},errors.New("invalid local actor handle") }
-	req,err:=http.NewRequestWithContext(ctx,http.MethodGet,c.baseURL+"/internal/v1/federation/actors/"+url.PathEscape(handle),nil)
+	return c.resolveActorPath(ctx,"/internal/v1/federation/actors/"+url.PathEscape(handle),handle)
+}
+
+func (c *Client) ResolveActorByID(ctx context.Context, userID string) (ActorProfile,error) {
+	userID=strings.TrimSpace(userID)
+	if userID==""||len(userID)>36 { return ActorProfile{},errors.New("invalid local actor user ID") }
+	return c.resolveActorPath(ctx,"/internal/v1/federation/actors/by-id/"+url.PathEscape(userID),"")
+}
+
+func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle string) (ActorProfile,error) {
+	req,err:=http.NewRequestWithContext(ctx,http.MethodGet,c.baseURL+path,nil)
 	if err!=nil{return ActorProfile{},err}
 	req.Header.Set("Authorization","Bearer "+c.token)
 	req.Header.Set("Accept","application/json")
@@ -51,13 +61,9 @@ func (c *Client) ResolveActor(ctx context.Context, handle string) (ActorProfile,
 	defer resp.Body.Close()
 	if resp.StatusCode==http.StatusNotFound{return ActorProfile{},ErrActorNotFound}
 	if resp.StatusCode<200||resp.StatusCode>=300{return ActorProfile{},fmt.Errorf("Backend actor lookup returned HTTP %d",resp.StatusCode)}
-	var envelope struct {
-		OK bool `json:"ok"`
-		Data ActorProfile `json:"data"`
-		Error *struct { Message string `json:"message"` } `json:"error"`
-	}
+	var envelope struct { OK bool `json:"ok"`; Data ActorProfile `json:"data"` }
 	if err:=json.NewDecoder(http.MaxBytesReader(nil,resp.Body,64<<10)).Decode(&envelope);err!=nil{return ActorProfile{},errors.New("Backend actor lookup returned invalid JSON")}
-	if !envelope.OK||!envelope.Data.FederationEnabled||envelope.Data.UserID==""||envelope.Data.Handle!=handle {
+	if !envelope.OK||!envelope.Data.FederationEnabled||envelope.Data.UserID==""||envelope.Data.Handle==""||(expectedHandle!=""&&envelope.Data.Handle!=expectedHandle) {
 		return ActorProfile{},errors.New("Backend actor lookup returned an invalid or ineligible profile")
 	}
 	return envelope.Data,nil
