@@ -57,16 +57,20 @@ Implemented in this branch:
 - atomic outbox + delivery-job enqueue;
 - activity-ID collision protection;
 - tests for missing credentials, unavailable runtime and activity identity/type validation;
-- OpenAPI path documentation.
+- OpenAPI path documentation;
+- a durable Backend outbox poller that reads the private Backend outbox, revalidates the author and federation consent, converts eligible public posts into ActivityPub Create/Note activities, and atomically stores protocol outbox rows plus delivery jobs;
+- a PostgreSQL-backed poll cursor that advances only after local enqueue succeeds;
+- a quarantine table for permanently invalid or no-longer-eligible Backend events so one poison event cannot stall the feed;
+- regression tests for successful conversion, durable cursor advancement, transient failures, and permanent actor ineligibility.
 
 Not yet complete:
-- Backend transactional-outbox table/producer/dispatcher wiring;
 - inbound HTTP Signature verification and durable inbox processing;
-- inbox processor that applies accepted remote activities through Backend authorization;
-- recipient fan-out beyond the current bounded set of stored remote followers;
-- delivery status callback/metrics and operational dead-letter UI;
+- an inbox processor that applies accepted remote Create/Update/Delete/Like/Announce activities through Backend authorization;
+- an authenticated Backend projection endpoint for remote activities;
+- authoritative remote Follow acceptance/Undo processing and follower fan-out;
+- delivery status callbacks/metrics and operational dead-letter inspection;
 - end-to-end staging interoperability against Mastodon-compatible peers.
 
 ## Safety and rollout
 
-Do not enable public inbox processing until signature verification, Digest/Date validation, replay protection, durable acceptance and Backend-authorized inbox processing pass tests. Do not call the new endpoint directly from a browser, mobile client or untrusted worker. Keep `FEDERATION_DELIVERY_WORKER_ENABLED=false` until staging verifies remote delivery, retries, lease recovery and dead-letter handling.
+Do not enable public inbox processing until signature verification, Digest/Date validation, replay protection, durable acceptance and Backend-authorized inbox processing pass tests. Do not call the new endpoint directly from a browser, mobile client or untrusted worker. Keep `FEDERATION_OUTBOX_POLLER_ENABLED=false` and `FEDERATION_DELIVERY_WORKER_ENABLED=false` by default. Enable the outbox poller only after the private Backend outbox endpoint and Federation database are configured; enable outbound delivery only after staging verifies signed remote delivery, retries, lease recovery, DNS/IP protections and dead-letter handling.
