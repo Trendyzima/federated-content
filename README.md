@@ -28,19 +28,20 @@ This branch implements the durable ActivityPub identity and signed-ingress found
 - Inbound requests are checked using RSA-SHA256 HTTP Signatures, Date and Digest validation, actor/key ownership checks, bounded request bodies and safe remote-key resolution.
 - Verified remote actor metadata and inbox activities are persisted idempotently before the service returns HTTP 202.
 - PostgreSQL delivery records support atomic claims, leases, acknowledgements, bounded retries and dead-letter state.
+- An opt-in outbound worker claims leased delivery jobs, signs HTTP POST requests with the local actor RSA key, uses a redirect-disabled public-IP-only HTTPS client, acknowledges successful/duplicate responses, retries transient failures and dead-letters permanent rejections. It remains disabled unless `FEDERATION_DELIVERY_WORKER_ENABLED=true`.
 - Readiness requires both durable Federation storage and the private Backend dependency. A missing dependency fails closed with HTTP 503.
 
 **This is not yet a complete or production-ready federation service.** The following work remains before public federation can be enabled:
 
 1. Start and supervise the durable inbox processor; apply Follow/Undo and supported Create/Update/Delete/Like/Announce activities to Backend through authenticated, idempotent private APIs.
 2. Poll Backend's transactional federation outbox with a durable cursor; recover safely after restarts and handle pagination.
-3. Execute outbound signed HTTP delivery workers, including recipient validation, retry/backoff, lease recovery, acknowledgements and dead-letter inspection/replay.
+3. Connect a producer to the outbound delivery queue and operationalize the signed delivery worker. The worker implementation is opt-in and remains disabled by default until Follow/Undo processing, follower fan-out and outbox event production are ready.
 4. Build follower fan-out and recipient deduplication, with bounded concurrency and backpressure.
 5. Complete remote post projection and local canonical visibility/authorization checks.
 6. Add end-to-end tests across Backend, Federation and Data Centre, plus Mastodon/GoToSocial interoperability and load tests.
 7. Finish public domain routing, TLS, observability, operational recovery and production rollout controls.
 
-The database currently stores accepted inbox activities and delivery jobs; storage primitives alone do not mean those queues are being consumed. Do not enable public ActivityPub routing until the workers and end-to-end tests above are complete.
+The database stores accepted inbox activities and delivery jobs. The outbound delivery worker is implemented but deliberately disabled by default; no complete event/follower producer currently populates the queue. The inbox processor and Backend outbox poller are still missing. Do not enable the worker in production or public ActivityPub routing until the producer, inbox processing, fan-out and end-to-end tests are complete.
 
 ## Service contract
 
@@ -72,7 +73,7 @@ The HTTP service listens on `:8081` by default.
 | `GET /users/{username}/outbox` | Persisted ActivityPub outbox collection |
 | `POST /users/{username}/inbox` | Verify and durably accept a signed activity; returns 202 only after persistence |
 
-For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATION_DATABASE_URL`, `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN`. Do not put the private service token in a frontend, mobile bundle, public workflow log or browser request.
+For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATION_DATABASE_URL`, `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN`. The outbound delivery worker is disabled by default; only set `FEDERATION_DELIVERY_WORKER_ENABLED=true` in an isolated environment after creating test delivery jobs. Do not put the private service token in a frontend, mobile bundle, public workflow log or browser request.
 
 ## Security and reliability requirements
 
@@ -90,7 +91,7 @@ For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATI
 
 1. Durable inbox processing and Backend activity-application contract.
 2. Backend transactional outbox poller with persistent cursor and replay protection.
-3. Signed delivery worker, fan-out, retries and dead-letter recovery.
+3. Connect the signed delivery worker to the Backend event outbox and remote follower fan-out; add dead-letter inspection/replay.
 4. Remote post projection, pagination and canonical visibility enforcement.
 5. Cross-repository end-to-end, interoperability, security and load tests.
 6. Production routing, telemetry, incident response and controlled rollout.
