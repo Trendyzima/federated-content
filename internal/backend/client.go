@@ -107,8 +107,12 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 		Data ActorProfile `json:"data"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
-	if err != nil { return ActorProfile{}, fmt.Errorf("read Backend actor lookup response: %w", err) }
-	if len(raw) > 64<<10 { return ActorProfile{}, errors.New("Backend actor lookup response exceeded 64 KiB") }
+	if err != nil {
+		return ActorProfile{}, fmt.Errorf("read Backend actor lookup response: %w", err)
+	}
+	if len(raw) > 64<<10 {
+		return ActorProfile{}, errors.New("Backend actor lookup response exceeded 64 KiB")
+	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return ActorProfile{}, errors.New("Backend actor lookup returned invalid JSON")
 	}
@@ -150,8 +154,12 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
-	if err != nil { return OutboxPage{}, fmt.Errorf("read Backend outbox response: %w", err) }
-	if len(raw) > 1<<20 { return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB") }
+	if err != nil {
+		return OutboxPage{}, fmt.Errorf("read Backend outbox response: %w", err)
+	}
+	if len(raw) > 1<<20 {
+		return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return OutboxPage{}, fmt.Errorf("Backend outbox returned HTTP %d", resp.StatusCode)
 	}
