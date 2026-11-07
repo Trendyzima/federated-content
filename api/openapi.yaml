@@ -40,6 +40,8 @@ paths:
                 type: object
         "404":
           description: Account is not hosted by this service
+        "503":
+          description: Private Backend actor eligibility lookup is unavailable
   /users/{username}:
     get:
       operationId: getActor
@@ -86,6 +88,8 @@ paths:
                 type: object
         "404":
           description: Actor not found
+        "503":
+          description: Private Backend actor eligibility or durable outbox storage is unavailable
   /users/{username}/inbox:
     post:
       operationId: receiveActivity
