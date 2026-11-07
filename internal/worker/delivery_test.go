@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -160,5 +159,3 @@ func TestValidateInboxURLRejectsUnsafeTargets(t *testing.T) {
 		t.Fatalf("rejected valid HTTPS inbox URL: %v", err)
 	}
 }
-
-var _ = strings.Builder{}
