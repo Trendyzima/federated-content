@@ -529,6 +529,9 @@ func (s *Store) TombstoneRemoteObject(ctx context.Context, actorURI, objectURI s
 
 func (s *Store) AddRemoteObjectInteraction(ctx context.Context, activityID, actorURI, objectURI, kind string) error {
 	if kind!="Like" && kind!="Announce"{return errors.New("unsupported remote interaction kind")}
+	var exists bool
+	if err:=s.db.QueryRowContext(ctx,`SELECT EXISTS(SELECT 1 FROM remote_objects WHERE object_uri=$1 AND tombstone=FALSE AND deleted_at IS NULL)`,objectURI).Scan(&exists);err!=nil{return err}
+	if !exists{return sql.ErrNoRows}
 	_,err:=s.db.ExecContext(ctx,`INSERT INTO remote_object_interactions(activity_id,actor_uri,object_uri,kind)
 		VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,activityID,actorURI,objectURI,kind)
 	if err!=nil{return err}
