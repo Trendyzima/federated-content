@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Trendyzima/federated-content/internal/activitypub"
 	"github.com/Trendyzima/federated-content/internal/backend"
 	"github.com/Trendyzima/federated-content/internal/config"
 	"github.com/Trendyzima/federated-content/internal/store"
@@ -25,6 +27,7 @@ type Server struct {
 	mux    *http.ServeMux
 	state  *store.Store
 	backend *backend.Client
+	keys *activitypub.RemoteKeyResolver
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -33,7 +36,7 @@ func New(cfg config.Config, logger *slog.Logger) http.Handler {
 
 func NewWithRuntime(cfg config.Config, logger *slog.Logger, state *store.Store, backendClient *backend.Client) http.Handler {
 	if logger == nil { logger = slog.Default() }
-	s := &Server{cfg: cfg, logger: logger, mux: http.NewServeMux(), state: state, backend: backendClient}
+	s := &Server{cfg: cfg, logger: logger, mux: http.NewServeMux(), state: state, backend: backendClient, keys: activitypub.NewRemoteKeyResolver()}
 	s.routes()
 	return s.recoverer(s.requestLog(s.securityHeaders(s.mux)))
 }
@@ -164,13 +167,50 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
-	if r.PathValue("username") != s.cfg.ServiceActorUsername {
-		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found")
+	if s.state==nil || s.keys==nil {
+		writeError(w,http.StatusServiceUnavailable,"inbox_unavailable","Durable signed inbox processing is not configured")
 		return
 	}
-	// Fail closed: accepting unsigned or unverified activities would permit
-	// spoofing, replay, spam, and arbitrary side effects.
-	http.Error(w, "Inbox processing is not enabled until HTTP Signature verification is configured", http.StatusNotImplemented)
+	if r.PathValue("username")==s.cfg.ServiceActorUsername {
+		writeError(w,http.StatusNotFound,"actor_not_found","The service actor does not accept user activities")
+		return
+	}
+	localActorURI:=s.cfg.PublicBaseURL+"/users/"+url.PathEscape(r.PathValue("username"))
+	localActor,err:=s.state.ActorByURI(r.Context(),localActorURI)
+	if errors.Is(err,sql.ErrNoRows) {writeError(w,http.StatusNotFound,"actor_not_found","Actor not found");return}
+	if err!=nil {writeError(w,http.StatusServiceUnavailable,"inbox_unavailable","Local actor lookup is unavailable");return}
+	if r.Header.Get("Content-Type")!="" && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")),"application/activity+json") && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")),"application/ld+json") {
+		writeError(w,http.StatusUnsupportedMediaType,"ActivityPub content type is required");return
+	}
+	body,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,1<<20))
+	if err!=nil {writeError(w,http.StatusRequestEntityTooLarge,"ActivityPub activity exceeds the one-megabyte limit");return}
+	verified,err:=activitypub.VerifyRequest(r.Context(),r,body,s.keys,time.Now().UTC())
+	if err!=nil {writeError(w,http.StatusUnauthorized,"ActivityPub HTTP Signature is invalid");return}
+	var activity struct {
+		ID string `json:"id"`
+		Type string `json:"type"`
+		Actor string `json:"actor"`
+	}
+	if err:=json.Unmarshal(body,&activity);err!=nil || !isHTTPSURI(activity.ID) || !isHTTPSURI(activity.Actor) || activity.Type=="" || activity.Actor!=verified.Owner {
+		writeError(w,http.StatusBadRequest,"ActivityPub activity identity is invalid");return
+	}
+	switch activity.Type {
+	case "Follow","Undo","Create","Update","Delete","Like","Announce","Accept","Reject","Block":
+	default:
+		writeError(w,http.StatusUnprocessableEntity,"ActivityPub activity type is not supported");return
+	}
+	if err:=s.state.StoreRemoteActor(r.Context(),verified.Owner,verified.ID,verified.PEM,verified.Inbox,verified.SharedInbox);err!=nil {
+		writeError(w,http.StatusServiceUnavailable,"remote actor metadata could not be persisted");return
+	}
+	inserted,err:=s.state.StoreInbox(r.Context(),activity.ID,verified.Owner,localActor.Username,activity.Type,body)
+	if err!=nil {writeError(w,http.StatusServiceUnavailable,"ActivityPub inbox could not durably accept the activity");return}
+	w.Header().Set("Location",activity.ID)
+	writeJSON(w,http.StatusAccepted,map[string]any{"status":"accepted","duplicate":!inserted,"recipient":localActor.ActorURI})
+}
+
+func isHTTPSURI(raw string) bool {
+	u,err:=url.Parse(raw)
+	return err==nil&&u.Scheme=="https"&&u.Host!=""&&u.User==nil&&u.Fragment==""
 }
 
 func (s *Server) actorURL() string {
