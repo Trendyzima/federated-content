@@ -59,6 +59,7 @@ type publishedPostPayload struct {
 	ID          string `json:"id"`
 	AuthorID    string `json:"author_id"`
 	ActorHandle string `json:"actor_handle"`
+	ActorDisplayName string `json:"actor_display_name"`
 	Content     string `json:"content"`
 	Visibility  string `json:"visibility"`
 	Sensitive   bool   `json:"sensitive"`
