@@ -61,3 +61,8 @@ Use private network routing plus mTLS where available. If signed service tokens 
 6. Enable public federation only after signature, authorization, idempotency, and interoperability gates pass.
 
 This document defines a contract proposal; it does not claim that the backend endpoints or event publisher already exist.
+
+
+## Private API client usage
+
+The Federation service uses the Backend private API for actor discovery, readiness and durable published-post outbox polling. Every request carries the internal bearer, API version `1` and a unique request ID. Outbox polling uses bounded pages (`limit <= 99`) and persists `next_cursor` even when `has_more=false`, so the next poll can resume without replaying the entire event history. The Federation service never reads Appwrite/Neon directly.
