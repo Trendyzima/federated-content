@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func (s *Server) enqueueAuthorizedActivity(w http.ResponseWriter, r *http.Reques
 		"ok": true,
 		"data": map[string]any{"activity_id": input.ActivityID, "recipient_count": len(inboxes), "accepted": true},
 		"error": nil,
-		"request_id": requestID(r),
+		"request_id": internalRequestID(r),
 	})
 }
 
@@ -150,3 +151,13 @@ func validAuthorizedActivity(activity activityEnvelope, expectedID string) bool 
 	return true
 }
 
+
+var internalRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+func internalRequestID(r *http.Request) string {
+	value := strings.TrimSpace(r.Header.Get("X-Request-ID"))
+	if internalRequestIDPattern.MatchString(value) {
+		return value
+	}
+	return "federation-" + time.Now().UTC().Format("20060102T150405.000000000")
+}
