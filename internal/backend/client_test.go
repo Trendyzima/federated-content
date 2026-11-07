@@ -78,3 +78,39 @@ func TestListOutboxUsesVersionedPrivateAPIAndDurableCursor(t *testing.T) {
 		t.Fatal("expected limit validation")
 	}
 }
+
+
+func TestListOutboxRejectsMalformedCursorAndEvents(t *testing.T) {
+	const token = "test-federation-service-token-which-is-long-enough"
+	cases := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "invalid next cursor",
+			data: `{"ok":true,"data":{"events":[],"next_cursor":"not-base64!","has_more":true}}`,
+		},
+		{
+			name: "duplicate event IDs",
+			data: `{"ok":true,"data":{"events":[{"$id":"e1","event_type":"testagram.post.published","actor_id":"u1","object_id":"p1","payload":{},"created_at":"2026-11-07T10:00:00Z"},{"$id":"e1","event_type":"testagram.post.published","actor_id":"u1","object_id":"p2","payload":{},"created_at":"2026-11-07T10:00:00Z"}],"next_cursor":"","has_more":false}}`,
+		},
+		{
+			name: "invalid event timestamp",
+			data: `{"ok":true,"data":{"events":[{"$id":"e1","event_type":"testagram.post.published","actor_id":"u1","object_id":"p1","payload":{},"created_at":"yesterday"}],"next_cursor":"","has_more":false}}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.data))
+			}))
+			defer server.Close()
+			client, err := New(server.URL, token, server.Client())
+			if err != nil { t.Fatal(err) }
+			if _, err := client.ListOutbox(context.Background(), "", 20); err == nil {
+				t.Fatal("expected malformed outbox response rejection")
+			}
+		})
+	}
+}
