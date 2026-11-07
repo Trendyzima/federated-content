@@ -77,3 +77,7 @@ func env(key, fallback string) string {
 	}
 	return fallback
 }
+
+func ValidActorUsername(value string) bool {
+	return actorUsernamePattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
+}
