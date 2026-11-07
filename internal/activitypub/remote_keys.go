@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -133,24 +134,37 @@ func safePublicDialContext(ctx context.Context, network, address string) (net.Co
 	return nil, errors.New("remote host did not resolve to a public IP address")
 }
 
+var nonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001::/23"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+}
+
 func isPublicIP(ip net.IP) bool {
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
 		return false
 	}
-	if ip4 := ip.To4(); ip4 != nil {
-		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
-			return false
-		}
-		if ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 0 {
-			return false
-		}
-		if ip4[0] == 198 && (ip4[1] == 18 || ip4[1] == 19) {
-			return false
-		}
-		if ip4[0] == 198 && ip4[1] == 51 && ip4[2] == 100 {
-			return false
-		}
-		if ip4[0] == 203 && ip4[1] == 0 && ip4[2] == 113 {
+	addr = addr.Unmap()
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() ||
+		addr.IsMulticast() || addr.IsUnspecified() {
+		return false
+	}
+	for _, prefix := range nonPublicPrefixes {
+		if prefix.Contains(addr) {
 			return false
 		}
 	}
