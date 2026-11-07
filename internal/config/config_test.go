@@ -13,6 +13,7 @@ func setValidEnvironment(t *testing.T) {
 	t.Setenv("INSTANCE_DOMAIN", "testagram.site")
 	t.Setenv("SERVICE_ACTOR_USERNAME", "Testagram")
 	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
+	t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "")
 }
 
 func TestLoadDefaultsAndNormalizesActorName(t *testing.T) {
@@ -125,3 +126,28 @@ func TestLoadRejectsPathLikeActorUsernames(t *testing.T) {
 		})
 	}
 }
+
+func TestOutboxPollerRequiresDurableStoreBackendAndDeliveryWorker(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "true")
+	if _, err := Load(); err == nil {
+		t.Fatal("outbox poller must reject missing private Backend and durable store configuration")
+	}
+
+	t.Setenv("FEDERATION_DATABASE_URL", "postgres://federation:secret@localhost:5432/federation?sslmode=disable")
+	t.Setenv("BACKEND_INTERNAL_URL", "http://api:8081")
+	t.Setenv("BACKEND_INTERNAL_TOKEN", strings.Repeat("f", 40))
+	if _, err := Load(); err == nil {
+		t.Fatal("outbox poller must require the delivery worker to be enabled")
+	}
+
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "true")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("valid outbox poller configuration rejected: %v", err)
+	}
+	if !cfg.OutboxPollerEnabled || !cfg.DeliveryWorkerEnabled {
+		t.Fatalf("outbox/delivery flags not enabled: %+v", cfg)
+	}
+}
+
