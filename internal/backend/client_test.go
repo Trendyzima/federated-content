@@ -79,7 +79,6 @@ func TestListOutboxUsesVersionedPrivateAPIAndDurableCursor(t *testing.T) {
 	}
 }
 
-
 func TestListOutboxRejectsMalformedCursorAndEvents(t *testing.T) {
 	const token = "test-federation-service-token-which-is-long-enough"
 	cases := []struct {
@@ -107,7 +106,9 @@ func TestListOutboxRejectsMalformedCursorAndEvents(t *testing.T) {
 			}))
 			defer server.Close()
 			client, err := New(server.URL, token, server.Client())
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if _, err := client.ListOutbox(context.Background(), "", 20); err == nil {
 				t.Fatal("expected malformed outbox response rejection")
 			}
