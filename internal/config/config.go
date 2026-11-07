@@ -11,32 +11,32 @@ import (
 var actorUsernamePattern = regexp.MustCompile(`^[a-z0-9_][a-z0-9_.-]{0,63}$`)
 
 type Config struct {
-	AppEnv               string
-	HTTPAddr             string
-	PublicBaseURL        string
-	InstanceDomain       string
-	ServiceActorUsername string
-	ServiceActorName     string
-	ServiceActorSummary  string
-	PublicKeyPEM         string
+	AppEnv                string
+	HTTPAddr              string
+	PublicBaseURL         string
+	InstanceDomain        string
+	ServiceActorUsername  string
+	ServiceActorName      string
+	ServiceActorSummary   string
+	PublicKeyPEM          string
 	FederationDatabaseURL string
-	BackendInternalURL string
-	BackendInternalToken string
+	BackendInternalURL    string
+	BackendInternalToken  string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		AppEnv:               env("APP_ENV", "development"),
-		HTTPAddr:             env("HTTP_ADDR", ":8081"),
-		PublicBaseURL:        strings.TrimRight(env("PUBLIC_BASE_URL", "https://federation.testagram.site"), "/"),
-		InstanceDomain:       strings.ToLower(strings.TrimSpace(env("INSTANCE_DOMAIN", "testagram.site"))),
-		ServiceActorUsername: strings.ToLower(strings.TrimSpace(env("SERVICE_ACTOR_USERNAME", "testagram"))),
-		ServiceActorName:     env("SERVICE_ACTOR_NAME", "Testagram"),
-		ServiceActorSummary:  env("SERVICE_ACTOR_SUMMARY", "The Testagram federated social network"),
-		PublicKeyPEM:         strings.TrimSpace(os.Getenv("PUBLIC_KEY_PEM")),
+		AppEnv:                env("APP_ENV", "development"),
+		HTTPAddr:              env("HTTP_ADDR", ":8081"),
+		PublicBaseURL:         strings.TrimRight(env("PUBLIC_BASE_URL", "https://federation.testagram.site"), "/"),
+		InstanceDomain:        strings.ToLower(strings.TrimSpace(env("INSTANCE_DOMAIN", "testagram.site"))),
+		ServiceActorUsername:  strings.ToLower(strings.TrimSpace(env("SERVICE_ACTOR_USERNAME", "testagram"))),
+		ServiceActorName:      env("SERVICE_ACTOR_NAME", "Testagram"),
+		ServiceActorSummary:   env("SERVICE_ACTOR_SUMMARY", "The Testagram federated social network"),
+		PublicKeyPEM:          strings.TrimSpace(os.Getenv("PUBLIC_KEY_PEM")),
 		FederationDatabaseURL: strings.TrimSpace(os.Getenv("FEDERATION_DATABASE_URL")),
-		BackendInternalURL: strings.TrimRight(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_URL")), "/"),
-		BackendInternalToken: strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_TOKEN")),
+		BackendInternalURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_URL")), "/"),
+		BackendInternalToken:  strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_TOKEN")),
 	}
 	if cfg.HTTPAddr == "" || cfg.InstanceDomain == "" || cfg.ServiceActorUsername == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR, INSTANCE_DOMAIN and SERVICE_ACTOR_USERNAME must not be empty")

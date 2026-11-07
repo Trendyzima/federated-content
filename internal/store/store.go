@@ -28,23 +28,23 @@ type Store struct {
 }
 
 type Actor struct {
-	UserID string
-	Username string
-	ActorURI string
-	PublicKeyID string
-	PublicKeyPEM string
+	UserID        string
+	Username      string
+	ActorURI      string
+	PublicKeyID   string
+	PublicKeyPEM  string
 	PrivateKeyPEM string
-	DisplayName string
-	Summary string
+	DisplayName   string
+	Summary       string
 }
 
 type Delivery struct {
-	ID int64
+	ID         int64
 	ActivityID string
-	InboxURL string
-	Attempts int
+	InboxURL   string
+	Attempts   int
 	LeaseToken string
-	Payload json.RawMessage
+	Payload    json.RawMessage
 }
 
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
@@ -72,7 +72,7 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error                   { return s.db.Close() }
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
 func (s *Store) EnsureActor(ctx context.Context, userID, username, actorURI, displayName, summary string) (Actor, error) {
@@ -84,133 +84,227 @@ func (s *Store) EnsureActor(ctx context.Context, userID, username, actorURI, dis
 	if err == nil {
 		_, err = s.db.ExecContext(ctx, `UPDATE local_actors SET username=$2, actor_uri=$3, public_key_id=$4, display_name=$5, summary=$6, updated_at=NOW() WHERE local_user_id=$1`,
 			userID, username, actorURI, actorURI+"#main-key", displayName, summary)
-		if err != nil { return Actor{}, fmt.Errorf("update local actor: %w", err) }
+		if err != nil {
+			return Actor{}, fmt.Errorf("update local actor: %w", err)
+		}
 		existing.Username, existing.ActorURI, existing.PublicKeyID = username, actorURI, actorURI+"#main-key"
 		existing.DisplayName, existing.Summary = displayName, summary
 		return existing, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) { return Actor{}, err }
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Actor{}, err
+	}
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil { return Actor{}, fmt.Errorf("generate actor signing key: %w", err) }
+	if err != nil {
+		return Actor{}, fmt.Errorf("generate actor signing key: %w", err)
+	}
 	privateDER := x509.MarshalPKCS1PrivateKey(key)
 	publicDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	if err != nil { return Actor{}, fmt.Errorf("encode actor public key: %w", err) }
+	if err != nil {
+		return Actor{}, fmt.Errorf("encode actor public key: %w", err)
+	}
 	actor := Actor{
 		UserID: userID, Username: username, ActorURI: actorURI,
-		PublicKeyID: actorURI+"#main-key",
-		PublicKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type:"PUBLIC KEY", Bytes:publicDER})),
-		PrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type:"RSA PRIVATE KEY", Bytes:privateDER})),
-		DisplayName: displayName, Summary: summary,
+		PublicKeyID:   actorURI + "#main-key",
+		PublicKeyPEM:  string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})),
+		PrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privateDER})),
+		DisplayName:   displayName, Summary: summary,
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO local_actors (local_user_id, username, actor_uri, public_key_id, public_key_pem, private_key_pem, display_name, summary)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (local_user_id) DO NOTHING`,
 		actor.UserID, actor.Username, actor.ActorURI, actor.PublicKeyID, actor.PublicKeyPEM, actor.PrivateKeyPEM, actor.DisplayName, actor.Summary)
-	if err != nil { return Actor{}, fmt.Errorf("persist local actor key: %w", err) }
+	if err != nil {
+		return Actor{}, fmt.Errorf("persist local actor key: %w", err)
+	}
 	// Another request may have won the insert race. Always return the persisted key.
 	return s.getActor(ctx, "local_user_id", userID)
 }
 
 func (s *Store) getActor(ctx context.Context, column, value string) (Actor, error) {
-	if column != "local_user_id" && column != "username" && column != "actor_uri" { return Actor{}, errors.New("invalid actor lookup") }
-	query := "SELECT local_user_id, username, actor_uri, public_key_id, public_key_pem, private_key_pem, display_name, summary FROM local_actors WHERE "+column+"=$1"
+	if column != "local_user_id" && column != "username" && column != "actor_uri" {
+		return Actor{}, errors.New("invalid actor lookup")
+	}
+	query := "SELECT local_user_id, username, actor_uri, public_key_id, public_key_pem, private_key_pem, display_name, summary FROM local_actors WHERE " + column + "=$1"
 	var a Actor
-	err := s.db.QueryRowContext(ctx, query, value).Scan(&a.UserID,&a.Username,&a.ActorURI,&a.PublicKeyID,&a.PublicKeyPEM,&a.PrivateKeyPEM,&a.DisplayName,&a.Summary)
+	err := s.db.QueryRowContext(ctx, query, value).Scan(&a.UserID, &a.Username, &a.ActorURI, &a.PublicKeyID, &a.PublicKeyPEM, &a.PrivateKeyPEM, &a.DisplayName, &a.Summary)
 	return a, err
 }
-func (s *Store) ActorByUserID(ctx context.Context, id string) (Actor,error) { return s.getActor(ctx,"local_user_id",id) }
-func (s *Store) ActorByUsername(ctx context.Context, username string) (Actor,error) { return s.getActor(ctx,"username",username) }
-func (s *Store) ActorByURI(ctx context.Context, uri string) (Actor,error) { return s.getActor(ctx,"actor_uri",uri) }
+func (s *Store) ActorByUserID(ctx context.Context, id string) (Actor, error) {
+	return s.getActor(ctx, "local_user_id", id)
+}
+func (s *Store) ActorByUsername(ctx context.Context, username string) (Actor, error) {
+	return s.getActor(ctx, "username", username)
+}
+func (s *Store) ActorByURI(ctx context.Context, uri string) (Actor, error) {
+	return s.getActor(ctx, "actor_uri", uri)
+}
 
-func (s *Store) StoreRemoteActor(ctx context.Context, actorURI,keyID,keyPEM,inboxURL,sharedInboxURL string) error {
-	if actorURI==""||keyID==""||keyPEM==""||inboxURL=="" {return errors.New("remote actor signing identity and inbox are required")}
-	_,err:=s.db.ExecContext(ctx,`INSERT INTO remote_actors (actor_uri,public_key_id,public_key_pem,inbox_url,shared_inbox_url,fetched_at)
+func (s *Store) StoreRemoteActor(ctx context.Context, actorURI, keyID, keyPEM, inboxURL, sharedInboxURL string) error {
+	if actorURI == "" || keyID == "" || keyPEM == "" || inboxURL == "" {
+		return errors.New("remote actor signing identity and inbox are required")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO remote_actors (actor_uri,public_key_id,public_key_pem,inbox_url,shared_inbox_url,fetched_at)
 		VALUES ($1,$2,$3,$4,$5,NOW()) ON CONFLICT (actor_uri) DO UPDATE SET
 		public_key_id=EXCLUDED.public_key_id,public_key_pem=EXCLUDED.public_key_pem,
 		inbox_url=EXCLUDED.inbox_url,shared_inbox_url=EXCLUDED.shared_inbox_url,fetched_at=NOW()`,
-		actorURI,keyID,keyPEM,inboxURL,sharedInboxURL)
+		actorURI, keyID, keyPEM, inboxURL, sharedInboxURL)
 	return err
 }
 
-func (s *Store) StoreInbox(ctx context.Context, activityID, actorURI, recipientUsername, activityType string, payload []byte) (bool,error) {
+func (s *Store) StoreInbox(ctx context.Context, activityID, actorURI, recipientUsername, activityType string, payload []byte) (bool, error) {
 	if activityID == "" || actorURI == "" || recipientUsername == "" || activityType == "" || !json.Valid(payload) {
 		return false, errors.New("invalid inbox activity")
 	}
 	result, err := s.db.ExecContext(ctx, `INSERT INTO inbox_activities (activity_id, actor_uri, recipient_username, activity_type, payload)
-		VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (activity_id) DO NOTHING`, activityID,actorURI,recipientUsername,activityType,string(payload))
-	if err != nil { return false, fmt.Errorf("persist inbox activity: %w",err) }
+		VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (activity_id) DO NOTHING`, activityID, actorURI, recipientUsername, activityType, string(payload))
+	if err != nil {
+		return false, fmt.Errorf("persist inbox activity: %w", err)
+	}
 	n, err := result.RowsAffected()
 	return n == 1, err
 }
 
 func (s *Store) EnqueueOutbox(ctx context.Context, activityID, actorURI string, payload []byte, inboxes []string) error {
-	if activityID == "" || actorURI == "" || !json.Valid(payload) { return errors.New("invalid outbox activity") }
-	tx, err := s.db.BeginTx(ctx,nil)
-	if err != nil { return err }
+	if activityID == "" || actorURI == "" || !json.Valid(payload) {
+		return errors.New("invalid outbox activity")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
 	defer tx.Rollback()
-	if _,err=tx.ExecContext(ctx,`INSERT INTO outbox_activities (activity_id,actor_uri,payload) VALUES ($1,$2,$3::jsonb) ON CONFLICT (activity_id) DO NOTHING`,activityID,actorURI,string(payload)); err != nil { return fmt.Errorf("persist outbox activity: %w",err) }
+	if _, err = tx.ExecContext(ctx, `INSERT INTO outbox_activities (activity_id,actor_uri,payload) VALUES ($1,$2,$3::jsonb) ON CONFLICT (activity_id) DO NOTHING`, activityID, actorURI, string(payload)); err != nil {
+		return fmt.Errorf("persist outbox activity: %w", err)
+	}
 	for _, inbox := range inboxes {
 		inbox = strings.TrimSpace(inbox)
-		if inbox == "" { continue }
-		if _,err=tx.ExecContext(ctx,`INSERT INTO delivery_jobs (activity_id,inbox_url) VALUES ($1,$2) ON CONFLICT (activity_id,inbox_url) DO NOTHING`,activityID,inbox); err != nil { return fmt.Errorf("enqueue remote delivery: %w",err) }
+		if inbox == "" {
+			continue
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO delivery_jobs (activity_id,inbox_url) VALUES ($1,$2) ON CONFLICT (activity_id,inbox_url) DO NOTHING`, activityID, inbox); err != nil {
+			return fmt.Errorf("enqueue remote delivery: %w", err)
+		}
 	}
 	return tx.Commit()
 }
 
-func (s *Store) ListOutbox(ctx context.Context, actorURI string, limit int) ([]json.RawMessage,int,error) {
-	if actorURI==""||limit<1||limit>100 { return nil,0,errors.New("invalid outbox query") }
+func (s *Store) ListOutbox(ctx context.Context, actorURI string, limit int) ([]json.RawMessage, int, error) {
+	if actorURI == "" || limit < 1 || limit > 100 {
+		return nil, 0, errors.New("invalid outbox query")
+	}
 	var total int
-	if err:=s.db.QueryRowContext(ctx,`SELECT COUNT(*) FROM outbox_activities WHERE actor_uri=$1`,actorURI).Scan(&total);err!=nil{return nil,0,err}
-	rows,err:=s.db.QueryContext(ctx,`SELECT payload FROM outbox_activities WHERE actor_uri=$1 ORDER BY created_at DESC,activity_id DESC LIMIT $2`,actorURI,limit)
-	if err!=nil{return nil,0,err}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_activities WHERE actor_uri=$1`, actorURI).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM outbox_activities WHERE actor_uri=$1 ORDER BY created_at DESC,activity_id DESC LIMIT $2`, actorURI, limit)
+	if err != nil {
+		return nil, 0, err
+	}
 	defer rows.Close()
-	items:=make([]json.RawMessage,0,limit)
-	for rows.Next(){var payload []byte;if err:=rows.Scan(&payload);err!=nil{return nil,0,err};items=append(items,json.RawMessage(payload))}
-	if err:=rows.Err();err!=nil{return nil,0,err}
-	return items,total,nil
+	items := make([]json.RawMessage, 0, limit)
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, json.RawMessage(payload))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
-func (s *Store) ClaimDeliveries(ctx context.Context, limit int, lease time.Duration) ([]Delivery,error) {
-	if limit < 1 || limit > 100 || lease < 15*time.Second || lease > 5*time.Minute { return nil, errors.New("invalid delivery claim bounds") }
-	tx,err:=s.db.BeginTx(ctx,nil); if err!=nil{return nil,err}; defer tx.Rollback()
-	rows,err:=tx.QueryContext(ctx,`SELECT d.id,d.activity_id,d.inbox_url,d.attempts,o.payload
+func (s *Store) ClaimDeliveries(ctx context.Context, limit int, lease time.Duration) ([]Delivery, error) {
+	if limit < 1 || limit > 100 || lease < 15*time.Second || lease > 5*time.Minute {
+		return nil, errors.New("invalid delivery claim bounds")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT d.id,d.activity_id,d.inbox_url,d.attempts,o.payload
 		FROM delivery_jobs d JOIN outbox_activities o ON o.activity_id=d.activity_id
 		WHERE d.attempts < $1 AND ((d.state IN ('pending','retry') AND d.available_at<=NOW()) OR (d.state='delivering' AND d.lease_until<NOW()))
-		ORDER BY d.available_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2`,maxDeliveryAttempts,limit)
-	if err!=nil{return nil,err}
-	var candidates []Delivery
-	for rows.Next(){ var d Delivery; if err:=rows.Scan(&d.ID,&d.ActivityID,&d.InboxURL,&d.Attempts,&d.Payload);err!=nil{rows.Close();return nil,err}; candidates=append(candidates,d) }
-	if err:=rows.Err();err!=nil{rows.Close();return nil,err}; rows.Close()
-	for i:=range candidates {
-		token:=make([]byte,24); if _,err:=rand.Read(token);err!=nil{return nil,err}
-		candidates[i].LeaseToken=hex.EncodeToString(token)
-		_,err=tx.ExecContext(ctx,`UPDATE delivery_jobs SET state='delivering',lease_token=$2,lease_until=NOW()+($3 * INTERVAL '1 second') WHERE id=$1`,candidates[i].ID,candidates[i].LeaseToken,int(lease.Seconds()))
-		if err!=nil{return nil,err}
+		ORDER BY d.available_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2`, maxDeliveryAttempts, limit)
+	if err != nil {
+		return nil, err
 	}
-	if err:=tx.Commit();err!=nil{return nil,err}
-	return candidates,nil
+	var candidates []Delivery
+	for rows.Next() {
+		var d Delivery
+		if err := rows.Scan(&d.ID, &d.ActivityID, &d.InboxURL, &d.Attempts, &d.Payload); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		candidates = append(candidates, d)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for i := range candidates {
+		token := make([]byte, 24)
+		if _, err := rand.Read(token); err != nil {
+			return nil, err
+		}
+		candidates[i].LeaseToken = hex.EncodeToString(token)
+		_, err = tx.ExecContext(ctx, `UPDATE delivery_jobs SET state='delivering',lease_token=$2,lease_until=NOW()+($3 * INTERVAL '1 second') WHERE id=$1`, candidates[i].ID, candidates[i].LeaseToken, int(lease.Seconds()))
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return candidates, nil
 }
 
 func (s *Store) AckDelivery(ctx context.Context, id int64, token string) error {
-	result,err:=s.db.ExecContext(ctx,`UPDATE delivery_jobs SET state='delivered',delivered_at=NOW(),lease_token=NULL,lease_until=NULL,last_error='' WHERE id=$1 AND state='delivering' AND lease_token=$2`,id,token)
-	if err!=nil{return err}; n,err:=result.RowsAffected(); if err==nil&&n!=1{return errors.New("delivery lease is no longer owned")}; return err
+	result, err := s.db.ExecContext(ctx, `UPDATE delivery_jobs SET state='delivered',delivered_at=NOW(),lease_token=NULL,lease_until=NULL,last_error='' WHERE id=$1 AND state='delivering' AND lease_token=$2`, id, token)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 {
+		return errors.New("delivery lease is no longer owned")
+	}
+	return err
 }
 
 func (s *Store) FailDelivery(ctx context.Context, id int64, token, reason string, permanent bool) error {
-	reason=strings.TrimSpace(reason); if len(reason)>1000 { reason=reason[:1000] }
-	result,err:=s.db.ExecContext(ctx,`UPDATE delivery_jobs SET
+	reason = strings.TrimSpace(reason)
+	if len(reason) > 1000 {
+		reason = reason[:1000]
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE delivery_jobs SET
 		attempts=attempts+1,
 		state=CASE WHEN $3 OR attempts+1 >= $4 THEN 'dead_letter' ELSE 'retry' END,
 		available_at=CASE WHEN $3 OR attempts+1 >= $4 THEN available_at ELSE NOW()+((1 << LEAST(attempts,10)) * INTERVAL '1 second') END,
 		lease_token=NULL,lease_until=NULL,last_error=$5
-		WHERE id=$1 AND state='delivering' AND lease_token=$2`,id,token,permanent,maxDeliveryAttempts,reason)
-	if err!=nil{return err}; n,err:=result.RowsAffected(); if err==nil&&n!=1{return errors.New("delivery lease is no longer owned")}; return err
+		WHERE id=$1 AND state='delivering' AND lease_token=$2`, id, token, permanent, maxDeliveryAttempts, reason)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 {
+		return errors.New("delivery lease is no longer owned")
+	}
+	return err
 }
 
 func (s *Store) MarkInboxProcessed(ctx context.Context, activityID string, processingErr error) error {
-	if processingErr==nil {
-		_,err:=s.db.ExecContext(ctx,`UPDATE inbox_activities SET state='processed',processed_at=NOW(),last_error='' WHERE activity_id=$1`,activityID); return err
+	if processingErr == nil {
+		_, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET state='processed',processed_at=NOW(),last_error='' WHERE activity_id=$1`, activityID)
+		return err
 	}
-	reason:=processingErr.Error(); if len(reason)>1000 {reason=reason[:1000]}
-	_,err:=s.db.ExecContext(ctx,`UPDATE inbox_activities SET state='rejected',processed_at=NOW(),last_error=$2 WHERE activity_id=$1`,activityID,reason); return err
+	reason := processingErr.Error()
+	if len(reason) > 1000 {
+		reason = reason[:1000]
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET state='rejected',processed_at=NOW(),last_error=$2 WHERE activity_id=$1`, activityID, reason)
+	return err
 }

@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"github.com/Trendyzima/federated-content/internal/backend"
 	"errors"
+	"github.com/Trendyzima/federated-content/internal/backend"
 	"log/slog"
 	"net/http"
 	"os"
@@ -27,13 +27,19 @@ func main() {
 	var federationStore *store.Store
 	if cfg.FederationDatabaseURL != "" {
 		federationStore, err = store.Open(context.Background(), cfg.FederationDatabaseURL)
-		if err != nil { logger.Error("federation storage initialization failed", "error", err); os.Exit(1) }
+		if err != nil {
+			logger.Error("federation storage initialization failed", "error", err)
+			os.Exit(1)
+		}
 		defer federationStore.Close()
 	}
 	var backendClient *backend.Client
 	if cfg.BackendInternalURL != "" {
 		backendClient, err = backend.New(cfg.BackendInternalURL, cfg.BackendInternalToken, nil)
-		if err != nil { logger.Error("Backend federation client configuration failed", "error", err); os.Exit(1) }
+		if err != nil {
+			logger.Error("Backend federation client configuration failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	server := &http.Server{
