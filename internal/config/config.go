@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -22,6 +23,7 @@ type Config struct {
 	FederationDatabaseURL string
 	BackendInternalURL    string
 	BackendInternalToken  string
+	DeliveryWorkerEnabled bool
 }
 
 func Load() (Config, error) {
@@ -38,6 +40,11 @@ func Load() (Config, error) {
 		BackendInternalURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_URL")), "/"),
 		BackendInternalToken:  strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_TOKEN")),
 	}
+	deliveryWorkerEnabled, err := strconv.ParseBool(env("FEDERATION_DELIVERY_WORKER_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("FEDERATION_DELIVERY_WORKER_ENABLED must be true or false")
+	}
+	cfg.DeliveryWorkerEnabled = deliveryWorkerEnabled
 	if cfg.HTTPAddr == "" || cfg.InstanceDomain == "" || cfg.ServiceActorUsername == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR, INSTANCE_DOMAIN and SERVICE_ACTOR_USERNAME must not be empty")
 	}

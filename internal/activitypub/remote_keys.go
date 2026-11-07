@@ -20,6 +20,13 @@ type RemoteKeyResolver struct {
 }
 
 func NewRemoteKeyResolver() *RemoteKeyResolver {
+	return &RemoteKeyResolver{client: NewRemoteHTTPSClient()}
+}
+
+// NewRemoteHTTPSClient creates a redirect-disabled client that connects only to
+// public IP addresses over TCP port 443. Use it for both remote actor resolution
+// and outbound ActivityPub delivery to prevent SSRF and DNS-rebinding attacks.
+func NewRemoteHTTPSClient() *http.Client {
 	transport := &http.Transport{
 		DialContext:           safePublicDialContext,
 		MaxIdleConns:          20,
@@ -27,13 +34,13 @@ func NewRemoteKeyResolver() *RemoteKeyResolver {
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,
 	}
-	return &RemoteKeyResolver{client: &http.Client{
+	return &http.Client{
 		Transport: transport,
-		Timeout:   7 * time.Second,
+		Timeout:   15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-	}}
+	}
 }
 
 func (r *RemoteKeyResolver) Resolve(ctx context.Context, keyID string) (PublicKey, error) {

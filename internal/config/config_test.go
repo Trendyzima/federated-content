@@ -12,6 +12,7 @@ func setValidEnvironment(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "https://federation.testagram.site")
 	t.Setenv("INSTANCE_DOMAIN", "testagram.site")
 	t.Setenv("SERVICE_ACTOR_USERNAME", "Testagram")
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
 }
 
 func TestLoadDefaultsAndNormalizesActorName(t *testing.T) {
@@ -22,6 +23,34 @@ func TestLoadDefaultsAndNormalizesActorName(t *testing.T) {
 	}
 	if cfg.ServiceActorUsername != "testagram" {
 		t.Fatalf("expected normalized username, got %q", cfg.ServiceActorUsername)
+	}
+}
+
+func TestDeliveryWorkerIsOptIn(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeliveryWorkerEnabled {
+		t.Fatal("delivery worker must remain disabled by default")
+	}
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.DeliveryWorkerEnabled {
+		t.Fatal("explicitly enabled delivery worker was not enabled")
+	}
+}
+
+func TestDeliveryWorkerRejectsMalformedEnableFlag(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected malformed worker flag to be rejected")
 	}
 }
 

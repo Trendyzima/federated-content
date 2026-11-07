@@ -3,6 +3,7 @@ package activitypub
 import (
 	"context"
 	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -25,6 +26,61 @@ type PublicKey struct {
 
 type KeyResolver interface {
 	Resolve(ctx context.Context, keyID string) (PublicKey, error)
+}
+
+func SignRequest(request *http.Request, body []byte, keyID, privateKeyPEM string, now time.Time) error {
+	if request == nil || request.URL == nil || request.URL.Scheme != "https" || request.URL.Host == "" || request.URL.User != nil || request.URL.Fragment != "" {
+		return errors.New("outbound ActivityPub request must target an HTTPS URL")
+	}
+	if len(body) == 0 || len(body) > 1<<20 || keyID == "" || len(keyID) > 2048 || strings.ContainsAny(keyID, "\r\n\"") || len(privateKeyPEM) > 16<<10 {
+		return errors.New("outbound ActivityPub signature input is invalid")
+	}
+	key, err := parseRSAPrivateKey(privateKeyPEM)
+	if err != nil {
+		return err
+	}
+	request.Host = request.URL.Host
+	request.Header.Set("Date", now.UTC().Format(http.TimeFormat))
+	digest := sha256.Sum256(body)
+	request.Header.Set("Digest", "SHA-256="+base64.StdEncoding.EncodeToString(digest[:]))
+	request.Header.Set("Content-Type", "application/activity+json")
+	request.Header.Set("Accept", "application/activity+json")
+	headers := "(request-target) host date digest"
+	canonical := strings.Join([]string{
+		"(request-target): " + strings.ToLower(request.Method) + " " + request.URL.RequestURI(),
+		"host: " + request.Host,
+		"date: " + request.Header.Get("Date"),
+		"digest: " + request.Header.Get("Digest"),
+	}, "\n")
+	sum := sha256.Sum256([]byte(canonical))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
+	if err != nil {
+		return fmt.Errorf("sign outbound ActivityPub request: %w", err)
+	}
+	request.Header.Set("Signature", `keyId="`+keyID+`",algorithm="rsa-sha256",headers="`+headers+`",signature="`+base64.StdEncoding.EncodeToString(signature)+`"`)
+	return nil
+}
+
+func parseRSAPrivateKey(value string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(value))
+	if block == nil {
+		return nil, errors.New("local private key PEM is invalid")
+	}
+	var parsed any
+	var err error
+	if block.Type == "RSA PRIVATE KEY" {
+		parsed, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	} else {
+		parsed, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+	}
+	if err != nil {
+		return nil, errors.New("local private key could not be parsed")
+	}
+	key, ok := parsed.(*rsa.PrivateKey)
+	if !ok || key.N.BitLen() < 2048 || key.N.BitLen() > 8192 {
+		return nil, errors.New("local RSA private key size is unsupported")
+	}
+	return key, nil
 }
 
 func VerifyRequest(ctx context.Context, request *http.Request, body []byte, resolver KeyResolver, now time.Time) (PublicKey, error) {

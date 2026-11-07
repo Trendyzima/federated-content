@@ -45,6 +45,7 @@ type Actor struct {
 type Delivery struct {
 	ID         int64
 	ActivityID string
+	ActorURI   string
 	InboxURL   string
 	Attempts   int
 	LeaseToken string
@@ -249,7 +250,7 @@ func (s *Store) ClaimDeliveries(ctx context.Context, limit int, lease time.Durat
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT d.id,d.activity_id,d.inbox_url,d.attempts,o.payload
+	rows, err := tx.QueryContext(ctx, `SELECT d.id,d.activity_id,o.actor_uri,d.inbox_url,d.attempts,o.payload
 		FROM delivery_jobs d JOIN outbox_activities o ON o.activity_id=d.activity_id
 		WHERE d.attempts < $1 AND ((d.state IN ('pending','retry') AND d.available_at<=NOW()) OR (d.state='delivering' AND d.lease_until<NOW()))
 		ORDER BY d.available_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2`, maxDeliveryAttempts, limit)
@@ -259,7 +260,7 @@ func (s *Store) ClaimDeliveries(ctx context.Context, limit int, lease time.Durat
 	var candidates []Delivery
 	for rows.Next() {
 		var d Delivery
-		if err := rows.Scan(&d.ID, &d.ActivityID, &d.InboxURL, &d.Attempts, &d.Payload); err != nil {
+		if err := rows.Scan(&d.ID, &d.ActivityID, &d.ActorURI, &d.InboxURL, &d.Attempts, &d.Payload); err != nil {
 			rows.Close()
 			return nil, err
 		}
