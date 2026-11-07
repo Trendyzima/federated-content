@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	_ "embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -741,12 +742,36 @@ func (s *Store) SaveSyncCursor(ctx context.Context, key, cursor string) error {
 	return nil
 }
 
-const syncStateKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+var syncStateKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+
+// SyncCursor reads a durable integration cursor. A missing row means the consumer has not yet processed any events.
+func (s *Store) SyncCursor(ctx context.Context, key string) (string, error) {
+	if !syncStateKeyPattern.MatchString(key) { return "", errors.New("invalid federation sync-state key") }
+	var cursor string
+	err := s.db.QueryRowContext(ctx, `SELECT cursor_value FROM federation_sync_state WHERE state_key=$1`, key).Scan(&cursor)
+	if errors.Is(err, sql.ErrNoRows) { return "", nil }
+	if err != nil { return "", fmt.Errorf("read federation sync cursor: %w", err) }
+	return cursor, nil
+}
+
+// SaveSyncCursor advances only after the corresponding activity or dead letter is durable.
+func (s *Store) SaveSyncCursor(ctx context.Context, key, cursor string) error {
+	if !syncStateKeyPattern.MatchString(key) || len(cursor) > 128 || strings.ContainsAny(cursor, "\r\n") { return errors.New("invalid federation sync cursor") }
+	if cursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err != nil || len(decoded) == 0 || len(decoded) > 36 { return errors.New("invalid federation sync cursor") }
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO federation_sync_state (state_key,cursor_value,updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (state_key) DO UPDATE SET cursor_value=EXCLUDED.cursor_value,updated_at=NOW()`, key, cursor)
+	if err != nil { return fmt.Errorf("save federation sync cursor: %w", err) }
+	return nil
+}
+
 func (s *Store) RecordOutboxDeadLetter(ctx context.Context, eventID, eventType, reason string, payload []byte) error {
 	if eventID == "" || len(eventID) > 36 || eventType == "" || len(eventType) > 96 || !json.Valid(payload) || (reason != "invalid_event" && reason != "actor_no_longer_eligible") {
 		return errors.New("invalid Backend outbox dead-letter record")
 	}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO federation_outbox_dead_letters (event_id,event_type,reason_code,payload) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (event_id) DO UPDATE SET event_id=EXCLUDED.event_id WHERE federation_outbox_dead_letters.event_type=EXCLUDED.event_type AND federation_outbox_dead_letters.reason_code=EXCLUDED.reason_code AND federation_outbox_dead_letters.payload=EXCLUDED.payload`, eventID, eventType, reason, string(payload))
-	if err != nil { return fmt.Errorf("persist Backend outbox dead letter: %w", err) }
+	var accepted string
+	err := s.db.QueryRowContext(ctx, `INSERT INTO federation_outbox_dead_letters (event_id,event_type,reason_code,payload) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (event_id) DO UPDATE SET event_id=EXCLUDED.event_id WHERE federation_outbox_dead_letters.event_type=EXCLUDED.event_type AND federation_outbox_dead_letters.reason_code=EXCLUDED.reason_code AND federation_outbox_dead_letters.payload=EXCLUDED.payload RETURNING event_id`, eventID, eventType, reason, string(payload)).Scan(&accepted)
+	if err != nil { return fmt.Errorf("persist Backend outbox dead letter or detect conflicting replay: %w", err) }
 	return nil
 }
