@@ -56,13 +56,13 @@ func permanentOutbox(code, message string) error {
 }
 
 type publishedPostPayload struct {
-	ID          string \`json:"id"\`
-	AuthorID    string \`json:"author_id"\`
-	ActorHandle string \`json:"actor_handle"\`
-	Content     string \`json:"content"\`
-	Visibility  string \`json:"visibility"\`
-	Sensitive   bool   \`json:"sensitive"\`
-	CreatedAt   string \`json:"created_at"\`
+	ID          string `json:"id"`
+	AuthorID    string `json:"author_id"`
+	ActorHandle string `json:"actor_handle"`
+	Content     string `json:"content"`
+	Visibility  string `json:"visibility"`
+	Sensitive   bool   `json:"sensitive"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func NewOutboxPoller(source OutboxSource, state OutboxStore, publicBaseURL, instanceDomain string, logger *slog.Logger) (*OutboxPoller, error) {
