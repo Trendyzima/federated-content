@@ -80,8 +80,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	var deliveryWorkerDone chan struct{}
 	if deliveryWorker != nil {
-		go deliveryWorker.Run(ctx)
+		deliveryWorkerDone = make(chan struct{})
+		go func() {
+			defer close(deliveryWorkerDone)
+			deliveryWorker.Run(ctx)
+		}()
 		logger.Info("federation outbound delivery worker enabled")
 	}
 
@@ -99,6 +104,9 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Error("graceful shutdown failed", "error", err)
 		_ = server.Close()
+	}
+	if deliveryWorkerDone != nil {
+		<-deliveryWorkerDone
 	}
 	logger.Info("federation API stopped")
 }
