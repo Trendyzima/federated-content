@@ -340,3 +340,57 @@ func (s *Store) MarkInboxProcessed(ctx context.Context, activityID string, proce
 	_, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET state='rejected',processed_at=NOW(),last_error=$2 WHERE activity_id=$1`, activityID, reason)
 	return err
 }
+
+
+func (s *Store) GetState(ctx context.Context, key string) (string, error) {
+	key = strings.TrimSpace(key)
+	if key == "" || len(key) > 128 {
+		return "", errors.New("invalid Federation state key")
+	}
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT state_value FROM service_state WHERE state_key=$1`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
+}
+
+func (s *Store) SetState(ctx context.Context, key, value string) error {
+	key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+	if key == "" || len(key) > 128 || len(value) > 256 {
+		return errors.New("invalid Federation state value")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO service_state(state_key,state_value,updated_at)
+		VALUES($1,$2,NOW()) ON CONFLICT(state_key) DO UPDATE
+		SET state_value=EXCLUDED.state_value,updated_at=NOW()`, key, value)
+	return err
+}
+
+func (s *Store) FollowerInboxes(ctx context.Context, localUserID string) ([]string, error) {
+	localUserID = strings.TrimSpace(localUserID)
+	if localUserID == "" || len(localUserID) > 128 {
+		return nil, errors.New("invalid local follower owner")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url,''),a.inbox_url)
+		FROM remote_followers f
+		JOIN remote_actors a ON a.actor_uri=f.remote_actor_uri
+		WHERE f.local_user_id=$1 AND a.inbox_url <> ''
+		ORDER BY 1`, localUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	inboxes := make([]string, 0, 16)
+	for rows.Next() {
+		var inbox string
+		if err := rows.Scan(&inbox); err != nil {
+			return nil, err
+		}
+		inboxes = append(inboxes, inbox)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return inboxes, nil
+}
+
