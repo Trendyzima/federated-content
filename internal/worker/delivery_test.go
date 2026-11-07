@@ -102,7 +102,9 @@ func newDeliveryFixture(t *testing.T, responseStatus int) (*fakeDeliveryStore, *
 			InboxURL: server.URL + "/inbox", Attempts: 0, LeaseToken: "lease-token", Payload: body,
 		}},
 	}
-	worker, err := NewDeliveryWorker(state, server.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	client := server.Client()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	worker, err := NewDeliveryWorker(state, client, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,6 +130,7 @@ func TestDeliveryWorkerRetriesTemporaryFailuresAndDeadLettersPermanentFailures(t
 	}{
 		{name: "server error retries", status: http.StatusServiceUnavailable, permanent: false},
 		{name: "rate limit retries", status: http.StatusTooManyRequests, permanent: false},
+		{name: "redirect dead letters", status: http.StatusFound, permanent: true},
 		{name: "gone inbox dead letters", status: http.StatusGone, permanent: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
