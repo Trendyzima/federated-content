@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -49,6 +51,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /.well-known/webfinger", s.webfinger)
 	s.mux.HandleFunc("GET /users/{username}", s.actor)
 	s.mux.HandleFunc("GET /users/{username}/outbox", s.outbox)
+	s.mux.HandleFunc("GET /users/{username}/followers", s.followers)
+	s.mux.HandleFunc("GET /users/{username}/statuses/{postID}", s.object)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
 }
 
@@ -365,3 +369,105 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+
+func (s *Server) followers(w http.ResponseWriter, r *http.Request) {
+	username := r.PathValue("username")
+	if !acceptsActivityJSON(r.Header.Get("Accept")) {
+		http.Error(w, "ActivityPub Accept header required", http.StatusNotAcceptable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	actor, err := s.resolveLocalActor(ctx, username)
+	if errors.Is(err, backend.ErrActorNotFound) {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found or federation is disabled")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "followers_unavailable", "Follower collection is unavailable")
+		return
+	}
+	collectionURI := actor.ActorURI + "/followers"
+	if r.URL.Query().Get("page") != "true" {
+		total, err := s.state.CountRemoteFollowers(ctx, actor.UserID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "followers_unavailable", "Follower collection is unavailable")
+			return
+		}
+		writeActivityJSON(w, http.StatusOK, map[string]any{
+			"@context": "https://www.w3.org/ns/activitystreams",
+			"id": collectionURI, "type": "OrderedCollection", "totalItems": total,
+			"first": collectionURI + "?page=true",
+		})
+		return
+	}
+	after := ""
+	if raw := strings.TrimSpace(r.URL.Query().Get("cursor")); raw != "" {
+		decoded, decodeErr := base64.RawURLEncoding.DecodeString(raw)
+		if decodeErr != nil || len(decoded) == 0 || len(decoded) > 2048 {
+			writeError(w, http.StatusBadRequest, "invalid_cursor", "Follower cursor is invalid")
+			return
+		}
+		after = string(decoded)
+	}
+	items, next, err := s.state.ListRemoteFollowers(ctx, actor.UserID, after, 40)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "followers_unavailable", "Follower collection is unavailable")
+		return
+	}
+	total, err := s.state.CountRemoteFollowers(ctx, actor.UserID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "followers_unavailable", "Follower collection is unavailable")
+		return
+	}
+	pageID := collectionURI + "?page=true"
+	if after != "" {
+		pageID += "&cursor=" + url.QueryEscape(base64.RawURLEncoding.EncodeToString([]byte(after)))
+	}
+	page := map[string]any{
+		"@context": "https://www.w3.org/ns/activitystreams",
+		"id": pageID, "type": "OrderedCollectionPage", "partOf": collectionURI,
+		"totalItems": total, "orderedItems": items,
+	}
+	if next != "" {
+		page["next"] = collectionURI + "?page=true&cursor=" + url.QueryEscape(base64.RawURLEncoding.EncodeToString([]byte(next)))
+	}
+	writeActivityJSON(w, http.StatusOK, page)
+}
+
+func (s *Server) object(w http.ResponseWriter, r *http.Request) {
+	if !acceptsActivityJSON(r.Header.Get("Accept")) {
+		http.Error(w, "ActivityPub Accept header required", http.StatusNotAcceptable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	actor, err := s.resolveLocalActor(ctx, r.PathValue("username"))
+	if errors.Is(err, backend.ErrActorNotFound) {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found or federation is disabled")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "object_unavailable", "ActivityPub object lookup is unavailable")
+		return
+	}
+	postID := strings.TrimSpace(r.PathValue("postID"))
+	if postID == "" || len(postID) > 128 || strings.ContainsAny(postID, "/\\\\\r\n") {
+		writeError(w, http.StatusNotFound, "object_not_found", "Object not found")
+		return
+	}
+	objectURI := actor.ActorURI + "/statuses/" + url.PathEscape(postID)
+	object, err := s.state.GetOutboxObject(ctx, actor.ActorURI, objectURI)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "object_not_found", "Object not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "object_unavailable", "ActivityPub object lookup is unavailable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeActivityJSON(w, http.StatusOK, object)
+}
+
