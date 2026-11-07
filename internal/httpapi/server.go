@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"mime"
 	"net/url"
 	"strings"
 	"time"
@@ -215,7 +216,7 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Local actor lookup is unavailable")
 		return
 	}
-	if r.Header.Get("Content-Type") != "" && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/activity+json") && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/ld+json") {
+	if !isActivityPubContentType(r.Header.Get("Content-Type")) {
 		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "ActivityPub content type is required")
 		return
 	}
@@ -255,6 +256,15 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Location", activity.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "duplicate": !inserted, "recipient": localActor.ActorURI})
+}
+
+func isActivityPubContentType(raw string) bool {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(mediaType, "application/activity+json") ||
+		strings.EqualFold(mediaType, "application/ld+json")
 }
 
 func isHTTPSURI(raw string) bool {
