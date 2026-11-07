@@ -19,7 +19,9 @@ func validateDatabaseURL(raw string) (string, error) {
 	query := u.Query()
 	sslmode := strings.ToLower(strings.TrimSpace(query.Get("sslmode")))
 	if isLocalDatabaseHost(u.Hostname()) {
-		if sslmode == "" { query.Set("sslmode", "disable") }
+		if sslmode == "" {
+			query.Set("sslmode", "disable")
+		}
 	} else if sslmode != "require" && sslmode != "verify-ca" && sslmode != "verify-full" {
 		return "", errors.New("remote FEDERATION_DATABASE_URL must set sslmode=require or stronger")
 	}
@@ -27,7 +29,9 @@ func validateDatabaseURL(raw string) (string, error) {
 		if n, err := strconv.Atoi(timeout); err != nil || n < 1 || n > 30 {
 			return "", errors.New("FEDERATION_DATABASE_URL connect_timeout must be between 1 and 30 seconds")
 		}
-	} else { query.Set("connect_timeout", "5") }
+	} else {
+		query.Set("connect_timeout", "5")
+	}
 	u.RawQuery = query.Encode()
 	return u.String(), nil
 }
