@@ -53,17 +53,18 @@ type Delivery struct {
 }
 
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
-	databaseURL = strings.TrimSpace(databaseURL)
-	if databaseURL == "" {
-		return nil, errors.New("FEDERATION_DATABASE_URL is required")
+	databaseURL, err := validateDatabaseURL(databaseURL)
+	if err != nil {
+		return nil, err
 	}
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("open federation database: %w", err)
 	}
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(15 * time.Minute)
+	db.SetConnMaxIdleTime(2 * time.Minute)
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
@@ -83,16 +84,22 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("acquire federation migration connection: %w", err)
 	}
 	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", schemaMigrationLock); err != nil {
+
+	// Use a transaction-scoped advisory lock. Session-scoped advisory locks do
+	// not work reliably through Neon/PgBouncer transaction pooling.
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin federation schema migration: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", schemaMigrationLock); err != nil {
 		return fmt.Errorf("lock federation schema migration: %w", err)
 	}
-	defer func() {
-		unlockCtx, unlockCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer unlockCancel()
-		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", schemaMigrationLock)
-	}()
-	if _, err := conn.ExecContext(ctx, schema); err != nil {
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("execute federation schema: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit federation schema migration: %w", err)
 	}
 	return nil
 }
