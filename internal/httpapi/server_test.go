@@ -47,12 +47,12 @@ func TestWebFingerReturnsConfiguredActor(t *testing.T) {
 	}
 }
 
-func TestWebFingerDoesNotClaimUnknownUsers(t *testing.T) {
+func TestWebFingerFailsClosedWhenBackendIsUnavailable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/webfinger?resource=acct:unknown@testagram.site", nil)
 	testServer().ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "federation_identity_unavailable") {
+		t.Fatalf("expected fail-closed 503 without Backend identity lookup, got %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -92,7 +92,7 @@ func TestInboxFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/users/testagram/inbox", strings.NewReader("{}"))
 	testServer().ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("expected 501 until signature verification exists, got %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "inbox_unavailable") {
+		t.Fatalf("expected fail-closed 503 without durable inbox storage, got %d %s", rec.Code, rec.Body.String())
 	}
 }
