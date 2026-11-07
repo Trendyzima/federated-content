@@ -147,6 +147,19 @@ func (s *Store) EnqueueOutbox(ctx context.Context, activityID, actorURI string, 
 	return tx.Commit()
 }
 
+func (s *Store) ListOutbox(ctx context.Context, actorURI string, limit int) ([]json.RawMessage,int,error) {
+	if actorURI==""||limit<1||limit>100 { return nil,0,errors.New("invalid outbox query") }
+	var total int
+	if err:=s.db.QueryRowContext(ctx,`SELECT COUNT(*) FROM outbox_activities WHERE actor_uri=$1`,actorURI).Scan(&total);err!=nil{return nil,0,err}
+	rows,err:=s.db.QueryContext(ctx,`SELECT payload FROM outbox_activities WHERE actor_uri=$1 ORDER BY created_at DESC,activity_id DESC LIMIT $2`,actorURI,limit)
+	if err!=nil{return nil,0,err}
+	defer rows.Close()
+	items:=make([]json.RawMessage,0,limit)
+	for rows.Next(){var payload []byte;if err:=rows.Scan(&payload);err!=nil{return nil,0,err};items=append(items,json.RawMessage(payload))}
+	if err:=rows.Err();err!=nil{return nil,0,err}
+	return items,total,nil
+}
+
 func (s *Store) ClaimDeliveries(ctx context.Context, limit int, lease time.Duration) ([]Delivery,error) {
 	if limit < 1 || limit > 100 || lease < 15*time.Second || lease > 5*time.Minute { return nil, errors.New("invalid delivery claim bounds") }
 	tx,err:=s.db.BeginTx(ctx,nil); if err!=nil{return nil,err}; defer tx.Rollback()
