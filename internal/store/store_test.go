@@ -70,6 +70,9 @@ func TestDurableActorInboxOutboxAndDeliveryLease(t *testing.T) {
 	if delivery == nil || delivery.LeaseToken == "" {
 		t.Fatal("delivery was not claimed with a lease")
 	}
+	if delivery.ActorURI != actorURI {
+		t.Fatalf("claimed delivery actor URI=%q want=%q", delivery.ActorURI, actorURI)
+	}
 	if err := s.AckDelivery(ctx, delivery.ID, delivery.LeaseToken); err != nil {
 		t.Fatal(err)
 	}
