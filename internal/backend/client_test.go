@@ -11,7 +11,9 @@ import (
 func TestReadyUsesPrivateFederationReadinessContract(t *testing.T) {
 	const token = "test-federation-service-token-which-is-long-enough"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Testagram-API-Version") != "1" || r.Header.Get("X-Request-ID") == "" { t.Errorf("missing API version/request ID headers") }
+		if r.Header.Get("X-Testagram-API-Version") != "1" || r.Header.Get("X-Request-ID") == "" {
+			t.Errorf("missing API version/request ID headers")
+		}
 		if r.URL.Path != "/internal/v1/federation/readyz" {
 			t.Errorf("readiness path=%q", r.URL.Path)
 		}
