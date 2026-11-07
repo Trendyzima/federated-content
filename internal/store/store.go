@@ -206,13 +206,24 @@ func (s *Store) EnqueueOutbox(ctx context.Context, activityID, actorURI string, 
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO outbox_activities (activity_id,actor_uri,payload) VALUES ($1,$2,$3::jsonb) ON CONFLICT (activity_id) DO NOTHING`, activityID, actorURI, string(payload)); err != nil {
+	result, err := tx.ExecContext(ctx, `INSERT INTO outbox_activities (activity_id,actor_uri,payload)
+		VALUES ($1,$2,$3::jsonb)
+		ON CONFLICT (activity_id) DO UPDATE SET activity_id=EXCLUDED.activity_id
+		WHERE outbox_activities.actor_uri=EXCLUDED.actor_uri AND outbox_activities.payload=EXCLUDED.payload`,
+		activityID, actorURI, string(payload))
+	if err != nil {
 		return fmt.Errorf("persist outbox activity: %w", err)
+	}
+	if affected, rowsErr := result.RowsAffected(); rowsErr != nil || affected != 1 {
+		return errors.New("activity ID already exists with different actor or payload")
 	}
 	for _, inbox := range inboxes {
 		inbox = strings.TrimSpace(inbox)
 		if inbox == "" {
 			continue
+		}
+		if err := validateStoredInboxURL(inbox); err != nil {
+			return err
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO delivery_jobs (activity_id,inbox_url) VALUES ($1,$2) ON CONFLICT (activity_id,inbox_url) DO NOTHING`, activityID, inbox); err != nil {
 			return fmt.Errorf("enqueue remote delivery: %w", err)
