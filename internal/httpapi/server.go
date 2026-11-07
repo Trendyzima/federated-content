@@ -97,6 +97,7 @@ func (s *Server) webfinger(w http.ResponseWriter, r *http.Request) {
 		actorURL = actor.ActorURI
 	}
 	subject := "acct:" + username + "@" + s.cfg.InstanceDomain
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/jrd+json; charset=utf-8")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"subject": subject,
@@ -161,7 +162,7 @@ func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
 		"publicKey": map[string]string{"id": actor.PublicKeyID, "owner": actor.ActorURI, "publicKeyPem": actor.PublicKeyPEM},
 	}
 	w.Header().Set("Vary", "Accept")
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Cache-Control", "no-store")
 	writeActivityJSON(w, http.StatusOK, actorDocument)
 }
 
@@ -191,6 +192,8 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "outbox_unavailable", "Outbox is unavailable")
 		return
 	}
+	w.Header().Set("Vary", "Accept")
+	w.Header().Set("Cache-Control", "no-store")
 	writeActivityJSON(w, http.StatusOK, map[string]any{"@context": "https://www.w3.org/ns/activitystreams", "id": actor.ActorURI + "/outbox", "type": "OrderedCollection", "totalItems": total, "orderedItems": items})
 }
 
@@ -269,6 +272,7 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "inbox_persistence_failed", "ActivityPub inbox could not durably accept the activity")
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", activity.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "duplicate": !inserted, "recipient": localActor.ActorURI})
 }
