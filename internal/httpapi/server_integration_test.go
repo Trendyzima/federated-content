@@ -148,11 +148,11 @@ func TestLocalActorEndpointsRecheckFederationOptIn(t *testing.T) {
 	// A previously provisioned actor must stop resolving immediately after opt-out.
 	enabled = false
 	for _, tc := range []struct {
-		name string
-		method string
-		path string
+		name    string
+		method  string
+		path    string
 		headers map[string]string
-		body string
+		body    string
 	}{
 		{"actor document", http.MethodGet, "/users/" + handle, map[string]string{"Accept": activityJSON}, ""},
 		{"outbox", http.MethodGet, "/users/" + handle + "/outbox", map[string]string{"Accept": activityJSON}, ""},
