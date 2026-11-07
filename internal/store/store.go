@@ -23,6 +23,10 @@ var schema string
 
 const maxDeliveryAttempts = 12
 
+// schemaMigrationLock serializes embedded schema application across processes.
+// Multiple service replicas may start against an empty database simultaneously.
+const schemaMigrationLock int64 = 0x5445535441475241
+
 type Store struct {
 	db *sql.DB
 }
@@ -65,11 +69,31 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("connect to federation database: %w", err)
 	}
-	if _, err := db.ExecContext(ctx, schema); err != nil {
+	if err := applySchema(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate federation database: %w", err)
 	}
 	return &Store{db: db}, nil
+}
+
+func applySchema(ctx context.Context, db *sql.DB) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire federation migration connection: %w", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", schemaMigrationLock); err != nil {
+		return fmt.Errorf("lock federation schema migration: %w", err)
+	}
+	defer func() {
+		unlockCtx, unlockCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer unlockCancel()
+		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", schemaMigrationLock)
+	}()
+	if _, err := conn.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("execute federation schema: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Close() error                   { return s.db.Close() }
