@@ -1,6 +1,6 @@
 FROM golang:1.27.3-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/federation-api ./cmd/federation-api
 

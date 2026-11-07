@@ -12,6 +12,22 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: federation
+          POSTGRES_PASSWORD: federation-test-password
+          POSTGRES_DB: federation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U federation -d federation_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FEDERATION_TEST_DATABASE_URL: postgres://federation:federation-test-password@localhost:5432/federation_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
