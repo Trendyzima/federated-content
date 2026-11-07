@@ -453,7 +453,7 @@ func (s *Server) object(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	postID := strings.TrimSpace(r.PathValue("postID"))
-	if postID == "" || len(postID) > 128 || strings.ContainsAny(postID, "/\\\\\r\n") {
+	if postID == "" || len(postID) > 128 || strings.Contains(postID, "/") || strings.Contains(postID, "\\") || strings.ContainsAny(postID, "\r\n") {
 		writeError(w, http.StatusNotFound, "object_not_found", "Object not found")
 		return
 	}
