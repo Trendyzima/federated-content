@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -39,7 +40,7 @@ func TestVerifyRequestAcceptsValidRSASignatureAndDigest(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	req := httptest.NewRequest("POST", "https://federation.testagram.site/users/local_1/inbox", strings.NewReader(string(body)))
 	req.Host = "federation.testagram.site"
-	req.Header.Set("Date", now.Format(time.RFC1123))
+	req.Header.Set("Date", now.Format(http.TimeFormat))
 	digest := sha256.Sum256(body)
 	req.Header.Set("Digest", "SHA-256="+base64.StdEncoding.EncodeToString(digest[:]))
 	headers := "(request-target) host date digest"
@@ -73,7 +74,7 @@ func TestVerifyRequestRejectsTamperedDigestAndExpiredDate(t *testing.T) {
 	now := time.Now().UTC()
 	req := httptest.NewRequest("POST", "https://federation.testagram.site/users/local/inbox", strings.NewReader(string(body)))
 	req.Host = "federation.testagram.site"
-	req.Header.Set("Date", now.Add(-10*time.Minute).Format(time.RFC1123))
+	req.Header.Set("Date", now.Add(-10*time.Minute).Format(http.TimeFormat))
 	digest := sha256.Sum256([]byte("tampered"))
 	req.Header.Set("Digest", "SHA-256="+base64.StdEncoding.EncodeToString(digest[:]))
 	req.Header.Set("Signature", `keyId="`+keyID+`",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="AA=="`)
