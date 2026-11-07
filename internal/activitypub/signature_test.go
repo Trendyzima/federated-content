@@ -95,8 +95,14 @@ func TestParseSignatureHeaderRejectsDuplicateAndMissingFields(t *testing.T) {
 	}
 }
 
-func TestSafeRemoteDialRejectsPrivateAddresses(t *testing.T) {
-	for _, address := range []string{"127.0.0.1:443", "10.0.0.1:443", "192.168.1.10:443", "169.254.1.1:443", "[::1]:443", "127.0.0.1:" + strconv.Itoa(80)} {
+func TestSafeRemoteDialRejectsPrivateAndSpecialPurposeAddresses(t *testing.T) {
+	for _, address := range []string{
+		"127.0.0.1:443", "10.0.0.1:443", "192.168.1.10:443", "169.254.1.1:443",
+		"0.1.2.3:443", "100.64.0.1:443", "192.0.2.1:443", "192.88.99.1:443",
+		"198.51.100.1:443", "203.0.113.1:443", "240.0.0.1:443",
+		"[::1]:443", "[fc00::1]:443", "[fe80::1]:443", "[2001:db8::1]:443",
+		"[64:ff9b::7f00:1]:443", "127.0.0.1:" + strconv.Itoa(80),
+	} {
 		if _, err := safePublicDialContext(context.Background(), "tcp", address); err == nil {
 			t.Fatalf("accepted unsafe remote address %s", address)
 		}
