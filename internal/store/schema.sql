@@ -73,3 +73,12 @@ CREATE TABLE IF NOT EXISTS federation_sync_state (
     cursor_value TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Quarantine permanently invalid Backend events so one poison record cannot pin the cursor.
+CREATE TABLE IF NOT EXISTS federation_outbox_dead_letters (
+ event_id TEXT PRIMARY KEY,
+ event_type TEXT NOT NULL,
+ reason_code TEXT NOT NULL CHECK (reason_code IN ('invalid_event','actor_no_longer_eligible')),
+ payload JSONB NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
