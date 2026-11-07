@@ -2,6 +2,7 @@ package activitypub
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -34,7 +35,7 @@ func TestVerifyRequestAcceptsValidRSASignatureAndDigest(t *testing.T) {
 	headers:="(request-target) host date digest"
 	canonical:="(request-target): post "+req.URL.RequestURI()+"\nhost: "+req.Host+"\ndate: "+req.Header.Get("Date")+"\ndigest: "+req.Header.Get("Digest")
 	sum:=sha256.Sum256([]byte(canonical))
-	signature,err:=rsa.SignPKCS1v15(rand.Reader,private,0,sum[:])
+	signature,err:=rsa.SignPKCS1v15(rand.Reader,private,crypto.SHA256,sum[:])
 	if err!=nil{t.Fatal(err)}
 	req.Header.Set("Signature",`keyId="`+keyID+`",algorithm="rsa-sha256",headers="`+headers+`",signature="`+base64.StdEncoding.EncodeToString(signature)+`"`)
 	resolver:=fixedResolver{key:PublicKey{ID:keyID,Owner:owner,PEM:publicPEM,Inbox:"https://remote.example/inbox"}}
