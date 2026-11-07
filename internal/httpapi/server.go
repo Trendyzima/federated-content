@@ -138,7 +138,7 @@ func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.state == nil {
-		writeError(w, http.StatusServiceUnavailable, "federation storage is unavailable")
+		writeError(w, http.StatusServiceUnavailable, "federation_storage_unavailable", "Federation storage is unavailable")
 		return
 	}
 	actorURI := s.cfg.PublicBaseURL + "/users/" + url.PathEscape(username)
@@ -216,17 +216,17 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("Content-Type") != "" && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/activity+json") && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/ld+json") {
-		writeError(w, http.StatusUnsupportedMediaType, "ActivityPub content type is required")
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "ActivityPub content type is required")
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, "ActivityPub activity exceeds the one-megabyte limit")
+		writeError(w, http.StatusRequestEntityTooLarge, "activity_too_large", "ActivityPub activity exceeds the one-megabyte limit")
 		return
 	}
 	verified, err := activitypub.VerifyRequest(r.Context(), r, body, s.keys, time.Now().UTC())
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "ActivityPub HTTP Signature is invalid")
+		writeError(w, http.StatusUnauthorized, "invalid_signature", "ActivityPub HTTP Signature is invalid")
 		return
 	}
 	var activity struct {
@@ -235,22 +235,22 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		Actor string `json:"actor"`
 	}
 	if err := json.Unmarshal(body, &activity); err != nil || !isHTTPSURI(activity.ID) || !isHTTPSURI(activity.Actor) || activity.Type == "" || activity.Actor != verified.Owner {
-		writeError(w, http.StatusBadRequest, "ActivityPub activity identity is invalid")
+		writeError(w, http.StatusBadRequest, "invalid_activity", "ActivityPub activity identity is invalid")
 		return
 	}
 	switch activity.Type {
 	case "Follow", "Undo", "Create", "Update", "Delete", "Like", "Announce", "Accept", "Reject", "Block":
 	default:
-		writeError(w, http.StatusUnprocessableEntity, "ActivityPub activity type is not supported")
+		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "ActivityPub activity type is not supported")
 		return
 	}
 	if err := s.state.StoreRemoteActor(r.Context(), verified.Owner, verified.ID, verified.PEM, verified.Inbox, verified.SharedInbox); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "remote actor metadata could not be persisted")
+		writeError(w, http.StatusServiceUnavailable, "remote_actor_persistence_failed", "Remote actor metadata could not be persisted")
 		return
 	}
 	inserted, err := s.state.StoreInbox(r.Context(), activity.ID, verified.Owner, localActor.Username, activity.Type, body)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "ActivityPub inbox could not durably accept the activity")
+		writeError(w, http.StatusServiceUnavailable, "inbox_persistence_failed", "ActivityPub inbox could not durably accept the activity")
 		return
 	}
 	w.Header().Set("Location", activity.ID)
