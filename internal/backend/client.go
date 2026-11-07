@@ -6,9 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,18 +25,18 @@ type ActorProfile struct {
 }
 
 type OutboxEvent struct {
-	ID string `json:"$id"`
-	EventType string `json:"event_type"`
-	ActorID string `json:"actor_id"`
-	ObjectID string `json:"object_id"`
-	Payload json.RawMessage `json:"payload"`
-	CreatedAt string `json:"created_at"`
+	ID        string          `json:"$id"`
+	EventType string          `json:"event_type"`
+	ActorID   string          `json:"actor_id"`
+	ObjectID  string          `json:"object_id"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt string          `json:"created_at"`
 }
 
 type OutboxPage struct {
-	Events []OutboxEvent `json:"events"`
-	NextCursor string `json:"next_cursor"`
-	HasMore bool `json:"has_more"`
+	Events     []OutboxEvent `json:"events"`
+	NextCursor string        `json:"next_cursor"`
+	HasMore    bool          `json:"has_more"`
 }
 
 type Client struct {
@@ -59,7 +59,9 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	copyClient := *client
-	if copyClient.Timeout <= 0 || copyClient.Timeout > 10*time.Second { copyClient.Timeout = 5*time.Second }
+	if copyClient.Timeout <= 0 || copyClient.Timeout > 10*time.Second {
+		copyClient.Timeout = 5 * time.Second
+	}
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{baseURL: baseURL, token: token, http: &copyClient}, nil
 }
@@ -127,27 +129,37 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 	}
 	if after != "" {
 		decoded, err := base64.RawURLEncoding.DecodeString(after)
-		if err != nil || len(decoded) == 0 || len(decoded) > 36 { return OutboxPage{}, errors.New("outbox cursor is invalid") }
+		if err != nil || len(decoded) == 0 || len(decoded) > 36 {
+			return OutboxPage{}, errors.New("outbox cursor is invalid")
+		}
 	}
 	query := url.Values{}
 	query.Set("limit", fmt.Sprint(limit))
-	if after != "" { query.Set("after", after) }
+	if after != "" {
+		query.Set("after", after)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/v1/federation/outbox?"+query.Encode(), nil)
-	if err != nil { return OutboxPage{}, err }
+	if err != nil {
+		return OutboxPage{}, err
+	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Testagram-API-Version", "1")
 	req.Header.Set("X-Request-ID", newRequestID())
 	resp, err := c.http.Do(req)
-	if err != nil { return OutboxPage{}, fmt.Errorf("Backend outbox request failed: %w", err) }
+	if err != nil {
+		return OutboxPage{}, fmt.Errorf("Backend outbox request failed: %w", err)
+	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
-	if err != nil || len(raw) > 1<<20 { return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB") }
+	if err != nil || len(raw) > 1<<20 {
+		return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return OutboxPage{}, fmt.Errorf("Backend outbox returned HTTP %d", resp.StatusCode)
 	}
 	var envelope struct {
-		OK bool `json:"ok"`
+		OK   bool       `json:"ok"`
 		Data OutboxPage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil || !envelope.OK {
@@ -194,7 +206,9 @@ func isPrivateBackendHost(host string) bool {
 
 func newRequestID() string {
 	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err == nil { return hex.EncodeToString(raw[:]) }
+	if _, err := rand.Read(raw[:]); err == nil {
+		return hex.EncodeToString(raw[:])
+	}
 	return fmt.Sprintf("federation-%d", time.Now().UnixNano())
 }
 
