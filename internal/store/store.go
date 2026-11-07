@@ -22,6 +22,7 @@ import (
 var schema string
 
 const maxDeliveryAttempts = 12
+const maxInboxAttempts = 12
 
 // schemaMigrationLock serializes embedded schema application across processes.
 // Multiple service replicas may start against an empty database simultaneously.
@@ -40,6 +41,37 @@ type Actor struct {
 	PrivateKeyPEM string
 	DisplayName   string
 	Summary       string
+}
+
+
+type InboxActivity struct {
+	ActivityID        string
+	ActorURI          string
+	RecipientUsername string
+	ActivityType      string
+	Payload           json.RawMessage
+	Attempts          int
+	LeaseToken        string
+}
+
+type RemoteObject struct {
+	URI            string
+	ActorURI       string
+	ObjectType     string
+	URL            string
+	Content        string
+	Summary        string
+	PublishedAt    time.Time
+	UpdatedAt      time.Time
+	Sensitive      bool
+	Visibility     string
+	InReplyToURI   string
+	QuoteURI       string
+	LanguageCode   string
+	Attachments    json.RawMessage
+	Tags           json.RawMessage
+	ContentWarning string
+	RawObject      json.RawMessage
 }
 
 type Delivery struct {
@@ -340,3 +372,187 @@ func (s *Store) MarkInboxProcessed(ctx context.Context, activityID string, proce
 	_, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET state='rejected',processed_at=NOW(),last_error=$2 WHERE activity_id=$1`, activityID, reason)
 	return err
 }
+
+
+func (s *Store) ClaimInbox(ctx context.Context, limit int, lease time.Duration) ([]InboxActivity, error) {
+	if limit < 1 || limit > 100 || lease < 15*time.Second || lease > 5*time.Minute {
+		return nil, errors.New("invalid inbox claim bounds")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil { return nil, err }
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT activity_id,actor_uri,recipient_username,activity_type,payload,attempts
+		FROM inbox_activities WHERE attempts < $1 AND (
+			(state IN ('accepted','retry') AND available_at<=NOW()) OR
+			(state='processing' AND lease_until<NOW())
+		) ORDER BY available_at,received_at,activity_id
+		FOR UPDATE SKIP LOCKED LIMIT $2`, maxInboxAttempts, limit)
+	if err != nil { return nil, err }
+	var activities []InboxActivity
+	for rows.Next() {
+		var activity InboxActivity
+		if err := rows.Scan(&activity.ActivityID,&activity.ActorURI,&activity.RecipientUsername,&activity.ActivityType,&activity.Payload,&activity.Attempts); err != nil {
+			rows.Close(); return nil, err
+		}
+		activities = append(activities, activity)
+	}
+	if err := rows.Err(); err != nil { rows.Close(); return nil, err }
+	rows.Close()
+	for i := range activities {
+		token := make([]byte,24)
+		if _, err := rand.Read(token); err != nil { return nil, err }
+		activities[i].LeaseToken = hex.EncodeToString(token)
+		_, err := tx.ExecContext(ctx, `UPDATE inbox_activities SET state='processing',attempts=attempts+1,
+			lease_token=$2,lease_until=NOW()+($3 * INTERVAL '1 second') WHERE activity_id=$1`,
+			activities[i].ActivityID,activities[i].LeaseToken,int(lease.Seconds()))
+		if err != nil { return nil, err }
+		activities[i].Attempts++
+	}
+	if err := tx.Commit(); err != nil { return nil, err }
+	return activities,nil
+}
+
+func (s *Store) AckInbox(ctx context.Context, activityID, token string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET state='processed',processed_at=NOW(),
+		lease_token=NULL,lease_until=NULL,last_error='' WHERE activity_id=$1 AND state='processing' AND lease_token=$2`,activityID,token)
+	if err != nil { return err }
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 { return errors.New("inbox lease is no longer owned") }
+	return err
+}
+
+func (s *Store) FailInbox(ctx context.Context, activityID, token, reason string, permanent bool) error {
+	reason = strings.TrimSpace(reason)
+	if len(reason)>1000 { reason=reason[:1000] }
+	result, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET
+		state=CASE WHEN $3 THEN 'rejected' WHEN attempts >= $4 THEN 'dead_letter' ELSE 'retry' END,
+		available_at=CASE WHEN $3 OR attempts >= $4 THEN available_at ELSE NOW()+((1 << LEAST(attempts,10))*INTERVAL '1 second') END,
+		lease_token=NULL,lease_until=NULL,last_error=$5
+		WHERE activity_id=$1 AND state='processing' AND lease_token=$2`,activityID,token,permanent,maxInboxAttempts,reason)
+	if err != nil { return err }
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 { return errors.New("inbox lease is no longer owned") }
+	return err
+}
+
+func (s *Store) AddRemoteFollower(ctx context.Context, localUserID, remoteActorURI string) error {
+	localUserID,remoteActorURI=strings.TrimSpace(localUserID),strings.TrimSpace(remoteActorURI)
+	if localUserID=="" || remoteActorURI=="" { return errors.New("local user and remote actor are required") }
+	_,err:=s.db.ExecContext(ctx,`INSERT INTO remote_followers(local_user_id,remote_actor_uri) VALUES($1,$2) ON CONFLICT DO NOTHING`,localUserID,remoteActorURI)
+	return err
+}
+
+func (s *Store) RemoveRemoteFollower(ctx context.Context, localUserID, remoteActorURI string) error {
+	localUserID,remoteActorURI=strings.TrimSpace(localUserID),strings.TrimSpace(remoteActorURI)
+	if localUserID=="" || remoteActorURI=="" { return errors.New("local user and remote actor are required") }
+	_,err:=s.db.ExecContext(ctx,`DELETE FROM remote_followers WHERE local_user_id=$1 AND remote_actor_uri=$2`,localUserID,remoteActorURI)
+	return err
+}
+
+func (s *Store) RemoteActorInbox(ctx context.Context, actorURI string) (string,error) {
+	var inbox string
+	err:=s.db.QueryRowContext(ctx,`SELECT COALESCE(NULLIF(shared_inbox_url,''),inbox_url) FROM remote_actors WHERE actor_uri=$1 AND inbox_url<>''`,strings.TrimSpace(actorURI)).Scan(&inbox)
+	return inbox,err
+}
+
+func (s *Store) FollowerInboxes(ctx context.Context, localUserID string) ([]string,error) {
+	rows,err:=s.db.QueryContext(ctx,`SELECT DISTINCT COALESCE(NULLIF(a.shared_inbox_url,''),a.inbox_url)
+		FROM remote_followers f JOIN remote_actors a ON a.actor_uri=f.remote_actor_uri
+		WHERE f.local_user_id=$1 AND a.inbox_url<>'' ORDER BY 1`,strings.TrimSpace(localUserID))
+	if err!=nil{return nil,err}
+	defer rows.Close()
+	result:=make([]string,0,16)
+	for rows.Next(){var inbox string;if err:=rows.Scan(&inbox);err!=nil{return nil,err};result=append(result,inbox)}
+	return result,rows.Err()
+}
+
+func (s *Store) CountRemoteFollowers(ctx context.Context, localUserID string) (int,error) {
+	var count int
+	err:=s.db.QueryRowContext(ctx,`SELECT COUNT(*) FROM remote_followers WHERE local_user_id=$1`,strings.TrimSpace(localUserID)).Scan(&count)
+	return count,err
+}
+
+func (s *Store) ListRemoteFollowers(ctx context.Context, localUserID, after string, limit int) ([]string,string,error) {
+	if limit<1 || limit>100 || len(after)>2048 { return nil,"",errors.New("invalid remote followers query") }
+	rows,err:=s.db.QueryContext(ctx,`SELECT remote_actor_uri FROM remote_followers WHERE local_user_id=$1 AND remote_actor_uri>$2 ORDER BY remote_actor_uri LIMIT $3`,strings.TrimSpace(localUserID),strings.TrimSpace(after),limit+1)
+	if err!=nil{return nil,"",err}
+	defer rows.Close()
+	items:=make([]string,0,limit)
+	for rows.Next(){var uri string;if err:=rows.Scan(&uri);err!=nil{return nil,"",err};items=append(items,uri)}
+	if err:=rows.Err();err!=nil{return nil,"",err}
+	next:=""
+	if len(items)>limit{items=items[:limit];next=items[len(items)-1]}
+	return items,next,nil
+}
+
+func (s *Store) UpsertRemoteObject(ctx context.Context, object RemoteObject) error {
+	object.URI=strings.TrimSpace(object.URI)
+	object.ActorURI=strings.TrimSpace(object.ActorURI)
+	if object.URI=="" || object.ActorURI=="" || object.Visibility!="public" && object.Visibility!="unlisted" {
+		return errors.New("invalid remote object identity or visibility")
+	}
+	switch object.ObjectType { case "Note","Article","Question","Video","Image": default: return errors.New("unsupported remote object type") }
+	if !json.Valid(object.RawObject) { return errors.New("remote object payload must be valid JSON") }
+	if len(object.Attachments)==0 { object.Attachments=json.RawMessage("[]") }
+	if len(object.Tags)==0 { object.Tags=json.RawMessage("[]") }
+	if !json.Valid(object.Attachments) || !json.Valid(object.Tags) { return errors.New("remote object attachments and tags must be valid JSON") }
+	if object.PublishedAt.IsZero() { object.PublishedAt=time.Now().UTC() }
+	if object.UpdatedAt.IsZero() { object.UpdatedAt=object.PublishedAt }
+	result,err:=s.db.ExecContext(ctx,`INSERT INTO remote_objects(
+		object_uri,actor_uri,object_type,url,content,summary,published_at,updated_at,sensitive,visibility,
+		in_reply_to_uri,quote_uri,language_code,attachments,tags,content_warning,raw_object
+	) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16,$17::jsonb)
+	ON CONFLICT(object_uri) DO UPDATE SET
+		object_type=EXCLUDED.object_type,url=EXCLUDED.url,content=EXCLUDED.content,summary=EXCLUDED.summary,
+		updated_at=EXCLUDED.updated_at,sensitive=EXCLUDED.sensitive,visibility=EXCLUDED.visibility,
+		in_reply_to_uri=EXCLUDED.in_reply_to_uri,quote_uri=EXCLUDED.quote_uri,language_code=EXCLUDED.language_code,
+		attachments=EXCLUDED.attachments,tags=EXCLUDED.tags,content_warning=EXCLUDED.content_warning,raw_object=EXCLUDED.raw_object,
+		deleted_at=NULL,tombstone=FALSE,ingested_at=NOW()
+	WHERE remote_objects.actor_uri=EXCLUDED.actor_uri AND EXCLUDED.updated_at>=remote_objects.updated_at`,
+		object.URI,object.ActorURI,object.ObjectType,object.URL,object.Content,object.Summary,object.PublishedAt,object.UpdatedAt,
+		object.Sensitive,object.Visibility,object.InReplyToURI,object.QuoteURI,object.LanguageCode,string(object.Attachments),string(object.Tags),
+		object.ContentWarning,string(object.RawObject))
+	if err!=nil{return err}
+	n,err:=result.RowsAffected()
+	if err==nil && n==0{return errors.New("remote object update was stale or actor ownership did not match")}
+	return err
+}
+
+func (s *Store) TombstoneRemoteObject(ctx context.Context, actorURI, objectURI string) error {
+	result,err:=s.db.ExecContext(ctx,`UPDATE remote_objects SET tombstone=TRUE,deleted_at=NOW()
+		WHERE actor_uri=$1 AND object_uri=$2`,strings.TrimSpace(actorURI),strings.TrimSpace(objectURI))
+	if err!=nil{return err}
+	n,err:=result.RowsAffected()
+	if err==nil && n!=1{return sql.ErrNoRows}
+	return err
+}
+
+func (s *Store) AddRemoteObjectInteraction(ctx context.Context, activityID, actorURI, objectURI, kind string) error {
+	if kind!="Like" && kind!="Announce"{return errors.New("unsupported remote interaction kind")}
+	_,err:=s.db.ExecContext(ctx,`INSERT INTO remote_object_interactions(activity_id,actor_uri,object_uri,kind)
+		VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,activityID,actorURI,objectURI,kind)
+	if err!=nil{return err}
+	return s.refreshRemoteObjectCounts(ctx,objectURI)
+}
+
+func (s *Store) RemoveRemoteObjectInteraction(ctx context.Context, actorURI, objectURI, kind string) error {
+	if kind!="Like" && kind!="Announce"{return errors.New("unsupported remote interaction kind")}
+	_,err:=s.db.ExecContext(ctx,`DELETE FROM remote_object_interactions WHERE actor_uri=$1 AND object_uri=$2 AND kind=$3`,actorURI,objectURI,kind)
+	if err!=nil{return err}
+	return s.refreshRemoteObjectCounts(ctx,objectURI)
+}
+
+func (s *Store) refreshRemoteObjectCounts(ctx context.Context, objectURI string) error {
+	_,err:=s.db.ExecContext(ctx,`UPDATE remote_objects SET
+		like_count=(SELECT COUNT(*) FROM remote_object_interactions WHERE object_uri=$1 AND kind='Like'),
+		announce_count=(SELECT COUNT(*) FROM remote_object_interactions WHERE object_uri=$1 AND kind='Announce')
+		WHERE object_uri=$1`,objectURI)
+	return err
+}
+
+func (s *Store) GetOutboxObject(ctx context.Context, actorURI, objectURI string) (json.RawMessage,error) {
+	var object []byte
+	err:=s.db.QueryRowContext(ctx,`SELECT payload->'object' FROM outbox_activities WHERE actor_uri=$1 AND payload->'object'->>'id'=$2`,actorURI,objectURI).Scan(&object)
+	return json.RawMessage(object),err
+}
+
