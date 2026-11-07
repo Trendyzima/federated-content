@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/Trendyzima/federated-content/internal/backend"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Trendyzima/federated-content/internal/backend"
 	"github.com/Trendyzima/federated-content/internal/config"
 	"github.com/Trendyzima/federated-content/internal/httpapi"
 	"github.com/Trendyzima/federated-content/internal/store"
