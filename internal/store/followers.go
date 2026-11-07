@@ -50,3 +50,11 @@ func (s *Store) RemoteFollowerInboxes(ctx context.Context, localUserID string, l
 	}
 	return inboxes, nil
 }
+
+func validateStoredInboxURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+		return errors.New("remote delivery inbox must be an HTTPS URL without credentials or fragment")
+	}
+	return nil
+}
