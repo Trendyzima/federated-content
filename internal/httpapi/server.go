@@ -50,6 +50,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /users/{username}", s.actor)
 	s.mux.HandleFunc("GET /users/{username}/outbox", s.outbox)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
+	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
