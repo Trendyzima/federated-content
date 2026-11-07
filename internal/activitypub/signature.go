@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -33,7 +32,7 @@ func SignRequest(request *http.Request, body []byte, keyID, privateKeyPEM string
 	if request == nil || request.URL == nil || request.URL.Scheme != "https" || request.URL.Host == "" || request.URL.User != nil || request.URL.Fragment != "" {
 		return errors.New("outbound ActivityPub request must target an HTTPS URL")
 	}
-	if len(body) == 0 || len(body) > 1<<20 || keyID == "" || len(keyID) > 2048 {
+	if len(body) == 0 || len(body) > 1<<20 || keyID == "" || len(keyID) > 2048 || strings.ContainsAny(keyID, "\\r\\n\\\"") || len(privateKeyPEM) > 16<<10 {
 		return errors.New("outbound ActivityPub signature input is invalid")
 	}
 	key, err := parseRSAPrivateKey(privateKeyPEM)
