@@ -50,7 +50,7 @@ func TestListOutboxUsesVersionedPrivateAPIAndDurableCursor(t *testing.T) {
 	const token = "test-federation-service-token-which-is-long-enough"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/internal/v1/federation/outbox" { t.Errorf("path=%q", r.URL.Path) }
-		if r.URL.Query().Get("limit") != "20" || r.URL.Query().Get("after") != "cursor-1" { t.Errorf("query=%s", r.URL.RawQuery) }
+		if r.URL.Query().Get("limit") != "20" || r.URL.Query().Get("after") != "ZXZlbnQtMQ" { t.Errorf("query=%s", r.URL.RawQuery) }
 		if r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("X-Testagram-API-Version") != "1" || r.Header.Get("X-Request-ID") == "" {
 			t.Errorf("missing authenticated versioned request headers")
 		}
@@ -60,7 +60,7 @@ func TestListOutboxUsesVersionedPrivateAPIAndDurableCursor(t *testing.T) {
 	defer server.Close()
 	client, err := New(server.URL, token, server.Client())
 	if err != nil { t.Fatal(err) }
-	page, err := client.ListOutbox(context.Background(), "cursor-1", 20)
+	page, err := client.ListOutbox(context.Background(), "ZXZlbnQtMQ", 20)
 	if err != nil { t.Fatal(err) }
 	if len(page.Events) != 1 || page.Events[0].ID != "event-2" || page.NextCursor != "cursor-2" || page.HasMore {
 		t.Fatalf("unexpected outbox page: %+v", page)
