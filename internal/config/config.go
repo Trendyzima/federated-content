@@ -24,7 +24,7 @@ type Config struct {
 	BackendInternalURL    string
 	BackendInternalToken  string
 	DeliveryWorkerEnabled bool
-	OutboxPollerEnabled bool
+	OutboxPollerEnabled   bool
 }
 
 func Load() (Config, error) {
