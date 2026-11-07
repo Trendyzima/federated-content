@@ -84,16 +84,22 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("acquire federation migration connection: %w", err)
 	}
 	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", schemaMigrationLock); err != nil {
+
+	// Use a transaction-scoped advisory lock. Session-scoped advisory locks do
+	// not work reliably through Neon/PgBouncer transaction pooling.
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin federation schema migration: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", schemaMigrationLock); err != nil {
 		return fmt.Errorf("lock federation schema migration: %w", err)
 	}
-	defer func() {
-		unlockCtx, unlockCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer unlockCancel()
-		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", schemaMigrationLock)
-	}()
-	if _, err := conn.ExecContext(ctx, schema); err != nil {
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("execute federation schema: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit federation schema migration: %w", err)
 	}
 	return nil
 }
