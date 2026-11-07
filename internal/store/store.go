@@ -53,17 +53,18 @@ type Delivery struct {
 }
 
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
-	databaseURL = strings.TrimSpace(databaseURL)
-	if databaseURL == "" {
-		return nil, errors.New("FEDERATION_DATABASE_URL is required")
+	databaseURL, err := validateDatabaseURL(databaseURL)
+	if err != nil {
+		return nil, err
 	}
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("open federation database: %w", err)
 	}
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(15 * time.Minute)
+	db.SetConnMaxIdleTime(2 * time.Minute)
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
