@@ -394,3 +394,87 @@ func (s *Store) FollowerInboxes(ctx context.Context, localUserID string) ([]stri
 	return inboxes, nil
 }
 
+
+
+func (s *Store) AddRemoteFollower(ctx context.Context, localUserID, remoteActorURI string) error {
+	localUserID, remoteActorURI = strings.TrimSpace(localUserID), strings.TrimSpace(remoteActorURI)
+	if localUserID == "" || remoteActorURI == "" {
+		return errors.New("local user and remote actor are required")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO remote_followers(local_user_id,remote_actor_uri)
+		VALUES($1,$2) ON CONFLICT(local_user_id,remote_actor_uri) DO NOTHING`, localUserID, remoteActorURI)
+	return err
+}
+
+func (s *Store) RemoveRemoteFollower(ctx context.Context, localUserID, remoteActorURI string) error {
+	localUserID, remoteActorURI = strings.TrimSpace(localUserID), strings.TrimSpace(remoteActorURI)
+	if localUserID == "" || remoteActorURI == "" {
+		return errors.New("local user and remote actor are required")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM remote_followers WHERE local_user_id=$1 AND remote_actor_uri=$2`, localUserID, remoteActorURI)
+	return err
+}
+
+func (s *Store) RemoteActorInbox(ctx context.Context, actorURI string) (string, error) {
+	actorURI = strings.TrimSpace(actorURI)
+	if actorURI == "" {
+		return "", errors.New("remote actor URI is required")
+	}
+	var inbox string
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(shared_inbox_url,''),inbox_url)
+		FROM remote_actors WHERE actor_uri=$1 AND inbox_url <> ''`, actorURI).Scan(&inbox)
+	return inbox, err
+}
+
+func (s *Store) CountRemoteFollowers(ctx context.Context, localUserID string) (int, error) {
+	localUserID = strings.TrimSpace(localUserID)
+	if localUserID == "" {
+		return 0, errors.New("local user ID is required")
+	}
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM remote_followers WHERE local_user_id=$1`, localUserID).Scan(&count)
+	return count, err
+}
+
+func (s *Store) ListRemoteFollowers(ctx context.Context, localUserID, after string, limit int) ([]string, string, error) {
+	localUserID, after = strings.TrimSpace(localUserID), strings.TrimSpace(after)
+	if localUserID == "" || limit < 1 || limit > 100 || len(after) > 2048 {
+		return nil, "", errors.New("invalid remote followers query")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT remote_actor_uri FROM remote_followers
+		WHERE local_user_id=$1 AND remote_actor_uri > $2
+		ORDER BY remote_actor_uri LIMIT $3`, localUserID, after, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	actors := make([]string, 0, limit)
+	for rows.Next() {
+		var actorURI string
+		if err := rows.Scan(&actorURI); err != nil {
+			return nil, "", err
+		}
+		actors = append(actors, actorURI)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	var next string
+	if len(actors) > limit {
+		actors = actors[:limit]
+		next = actors[len(actors)-1]
+	}
+	return actors, next, nil
+}
+
+func (s *Store) GetOutboxObject(ctx context.Context, actorURI, objectURI string) (json.RawMessage, error) {
+	actorURI, objectURI = strings.TrimSpace(actorURI), strings.TrimSpace(objectURI)
+	if actorURI == "" || objectURI == "" {
+		return nil, errors.New("actor and object URI are required")
+	}
+	var object []byte
+	err := s.db.QueryRowContext(ctx, `SELECT payload->'object' FROM outbox_activities
+		WHERE actor_uri=$1 AND payload->'object'->>'id'=$2`, actorURI, objectURI).Scan(&object)
+	return json.RawMessage(object), err
+}
+
