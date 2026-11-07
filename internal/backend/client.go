@@ -107,9 +107,8 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 		Data ActorProfile `json:"data"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
-	if err != nil || len(raw) > 64<<10 {
-		return ActorProfile{}, errors.New("Backend actor lookup response exceeded 64 KiB")
-	}
+	if err != nil { return ActorProfile{}, fmt.Errorf("read Backend actor lookup response: %w", err) }
+	if len(raw) > 64<<10 { return ActorProfile{}, errors.New("Backend actor lookup response exceeded 64 KiB") }
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return ActorProfile{}, errors.New("Backend actor lookup returned invalid JSON")
 	}
@@ -152,9 +151,8 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
-	if err != nil || len(raw) > 1<<20 {
-		return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB")
-	}
+	if err != nil { return OutboxPage{}, fmt.Errorf("read Backend outbox response: %w", err) }
+	if len(raw) > 1<<20 { return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB") }
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return OutboxPage{}, fmt.Errorf("Backend outbox returned HTTP %d", resp.StatusCode)
 	}
@@ -168,7 +166,17 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 	if len(envelope.Data.Events) > limit || (envelope.Data.HasMore && envelope.Data.NextCursor == "") {
 		return OutboxPage{}, errors.New("Backend outbox returned invalid pagination metadata")
 	}
+	if envelope.Data.NextCursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(envelope.Data.NextCursor)
+		if err != nil || len(decoded) == 0 || len(decoded) > 36 {
+			return OutboxPage{}, errors.New("Backend outbox returned an invalid next cursor")
+		}
+	}
+	seen := make(map[string]struct{}, len(envelope.Data.Events))
 	for _, event := range envelope.Data.Events {
+		if _, duplicate := seen[event.ID]; duplicate { return OutboxPage{}, errors.New("Backend outbox returned duplicate event IDs") }
+		seen[event.ID] = struct{}{}
+		if _, err := time.Parse(time.RFC3339, event.CreatedAt); err != nil { return OutboxPage{}, errors.New("Backend outbox returned an invalid event timestamp") }
 		if event.ID == "" || event.EventType != "testagram.post.published" || event.ActorID == "" || event.ObjectID == "" || len(event.Payload) == 0 {
 			return OutboxPage{}, errors.New("Backend outbox returned an invalid or ineligible event")
 		}
