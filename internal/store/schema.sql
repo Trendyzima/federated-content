@@ -65,3 +65,11 @@ CREATE TABLE IF NOT EXISTS remote_followers (
     accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (local_user_id, remote_actor_uri)
 );
+
+-- Durable cursor for the Backend -> Federation outbox poller. The cursor is
+-- advanced only after the corresponding activity is durably enqueued locally.
+CREATE TABLE IF NOT EXISTS federation_sync_state (
+    state_key TEXT PRIMARY KEY,
+    cursor_value TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
