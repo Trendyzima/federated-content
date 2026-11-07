@@ -3,11 +3,13 @@ package backend
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,7 +49,7 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	token = strings.TrimSpace(token)
 	u, err := url.Parse(baseURL)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "api" || u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"))) {
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "https" && !(u.Scheme == "http" && isPrivateBackendHost(u.Hostname()))) {
 		return nil, errors.New("Backend URL must be HTTPS (HTTP only for private api or localhost)")
 	}
 	if len(token) < 32 || strings.ContainsAny(token, "\r\n") {
@@ -123,6 +125,10 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 	if len(after) > 128 || strings.ContainsAny(after, "\r\n") {
 		return OutboxPage{}, errors.New("outbox cursor is invalid")
 	}
+	if after != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(after)
+		if err != nil || len(decoded) == 0 || len(decoded) > 36 { return OutboxPage{}, errors.New("outbox cursor is invalid") }
+	}
 	query := url.Values{}
 	query.Set("limit", fmt.Sprint(limit))
 	if after != "" { query.Set("after", after) }
@@ -178,6 +184,13 @@ func (c *Client) Ready(ctx context.Context) error {
 	return nil
 }
 
+
+func isPrivateBackendHost(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "api" || host == "backend" || host == "localhost" || host == "127.0.0.1" || strings.HasSuffix(host, ".local") { return true }
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
+}
 
 func newRequestID() string {
 	var raw [16]byte
