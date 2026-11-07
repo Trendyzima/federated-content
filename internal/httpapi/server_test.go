@@ -88,6 +88,30 @@ func TestOutboxReturnsEmptyOrderedCollection(t *testing.T) {
 	}
 }
 
+func TestActivityPubContentTypeValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"activity json", "application/activity+json", true},
+		{"activity json with charset", "application/activity+json; charset=utf-8", true},
+		{"json-ld activity profile", `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`, true},
+		{"case insensitive media type", "Application/Activity+JSON", true},
+		{"missing", "", false},
+		{"plain json", "application/json", false},
+		{"malicious suffix", "application/activity+json-malicious", false},
+		{"text", "text/plain", false},
+		{"malformed", `application/activity+json; charset="unterminated`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isActivityPubContentType(tc.value); got != tc.want {
+				t.Fatalf("isActivityPubContentType(%q)=%v want=%v", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestInboxFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/users/testagram/inbox", strings.NewReader("{}"))
