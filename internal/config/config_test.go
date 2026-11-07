@@ -12,6 +12,7 @@ func setValidEnvironment(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "https://federation.testagram.site")
 	t.Setenv("INSTANCE_DOMAIN", "testagram.site")
 	t.Setenv("SERVICE_ACTOR_USERNAME", "Testagram")
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
 }
 
 func TestLoadDefaultsAndNormalizesActorName(t *testing.T) {
