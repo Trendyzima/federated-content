@@ -22,6 +22,21 @@ type ActorProfile struct {
 	FederationEnabled bool   `json:"federation_enabled"`
 }
 
+type OutboxEvent struct {
+	ID string `json:"$id"`
+	EventType string `json:"event_type"`
+	ActorID string `json:"actor_id"`
+	ObjectID string `json:"object_id"`
+	Payload json.RawMessage `json:"payload"`
+	CreatedAt string `json:"created_at"`
+}
+
+type OutboxPage struct {
+	Events []OutboxEvent `json:"events"`
+	NextCursor string `json:"next_cursor"`
+	HasMore bool `json:"has_more"`
+}
+
 type Client struct {
 	baseURL string
 	token   string
@@ -96,6 +111,49 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 	}
 	if !envelope.OK || !envelope.Data.FederationEnabled || envelope.Data.UserID == "" || envelope.Data.Handle == "" || (expectedHandle != "" && envelope.Data.Handle != expectedHandle) {
 		return ActorProfile{}, errors.New("Backend actor lookup returned an invalid or ineligible profile")
+	}
+	return envelope.Data, nil
+}
+
+
+func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (OutboxPage, error) {
+	if limit < 1 || limit > 99 {
+		return OutboxPage{}, errors.New("outbox limit must be between 1 and 99")
+	}
+	if len(after) > 128 || strings.ContainsAny(after, "\r\n") {
+		return OutboxPage{}, errors.New("outbox cursor is invalid")
+	}
+	query := url.Values{}
+	query.Set("limit", fmt.Sprint(limit))
+	if after != "" { query.Set("after", after) }
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/v1/federation/outbox?"+query.Encode(), nil)
+	if err != nil { return OutboxPage{}, err }
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
+	resp, err := c.http.Do(req)
+	if err != nil { return OutboxPage{}, fmt.Errorf("Backend outbox request failed: %w", err) }
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil || len(raw) > 1<<20 { return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB") }
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return OutboxPage{}, fmt.Errorf("Backend outbox returned HTTP %d", resp.StatusCode)
+	}
+	var envelope struct {
+		OK bool `json:"ok"`
+		Data OutboxPage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || !envelope.OK {
+		return OutboxPage{}, errors.New("Backend outbox returned an invalid response envelope")
+	}
+	if len(envelope.Data.Events) > limit || (envelope.Data.HasMore && envelope.Data.NextCursor == "") {
+		return OutboxPage{}, errors.New("Backend outbox returned invalid pagination metadata")
+	}
+	for _, event := range envelope.Data.Events {
+		if event.ID == "" || event.EventType != "testagram.post.published" || event.ActorID == "" || event.ObjectID == "" || len(event.Payload) == 0 {
+			return OutboxPage{}, errors.New("Backend outbox returned an invalid or ineligible event")
+		}
 	}
 	return envelope.Data, nil
 }
