@@ -2,11 +2,11 @@ package httpapi
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -83,13 +83,9 @@ func (s *Server) webfinger(w http.ResponseWriter, r *http.Request) {
 	}
 	actorURL := s.actorURL()
 	if username != s.cfg.ServiceActorUsername {
-		if s.backend == nil || s.state == nil {
-			writeError(w, http.StatusServiceUnavailable, "federation_identity_unavailable", "Local actor discovery is temporarily unavailable")
-			return
-		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		profile, err := s.backend.ResolveActor(ctx, username)
+		actor, err := s.resolveLocalActor(ctx, username)
 		if errors.Is(err, backend.ErrActorNotFound) {
 			writeError(w, http.StatusNotFound, "account_not_found", "The requested account is not hosted by this service")
 			return
@@ -98,19 +94,28 @@ func (s *Server) webfinger(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "federation_identity_unavailable", "Local actor discovery is temporarily unavailable")
 			return
 		}
-		actorURL = s.cfg.PublicBaseURL + "/users/" + url.PathEscape(profile.Handle)
-		if _, err := s.state.EnsureActor(ctx, profile.UserID, profile.Handle, actorURL, profile.DisplayName, profile.Summary); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "federation_actor_unavailable", "Local actor could not be provisioned")
-			return
-		}
+		actorURL = actor.ActorURI
 	}
 	subject := "acct:" + username + "@" + s.cfg.InstanceDomain
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/jrd+json; charset=utf-8")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"subject": subject,
 		"aliases": []string{actorURL},
 		"links":   []map[string]string{{"rel": "self", "type": activityJSON, "href": actorURL}},
 	})
+}
+
+func (s *Server) resolveLocalActor(ctx context.Context, username string) (store.Actor, error) {
+	if s.state == nil || s.backend == nil {
+		return store.Actor{}, errors.New("private Backend identity or Federation storage is unavailable")
+	}
+	profile, err := s.backend.ResolveActor(ctx, username)
+	if err != nil {
+		return store.Actor{}, err
+	}
+	actorURI := s.cfg.PublicBaseURL + "/users/" + url.PathEscape(profile.Handle)
+	return s.state.EnsureActor(ctx, profile.UserID, profile.Handle, actorURI, profile.DisplayName, profile.Summary)
 }
 
 func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
@@ -137,18 +142,15 @@ func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
 		writeActivityJSON(w, http.StatusOK, actor)
 		return
 	}
-	if s.state == nil {
-		writeError(w, http.StatusServiceUnavailable, "federation_storage_unavailable", "Federation storage is unavailable")
-		return
-	}
-	actorURI := s.cfg.PublicBaseURL + "/users/" + url.PathEscape(username)
-	actor, err := s.state.ActorByURI(r.Context(), actorURI)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	actor, err := s.resolveLocalActor(ctx, username)
+	if errors.Is(err, backend.ErrActorNotFound) {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found or federation is disabled")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "actor_unavailable", "Actor lookup is unavailable")
+		writeError(w, http.StatusServiceUnavailable, "actor_unavailable", "Actor eligibility lookup is unavailable")
 		return
 	}
 	actorDocument := map[string]any{
@@ -160,7 +162,7 @@ func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
 		"publicKey": map[string]string{"id": actor.PublicKeyID, "owner": actor.ActorURI, "publicKeyPem": actor.PublicKeyPEM},
 	}
 	w.Header().Set("Vary", "Accept")
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Cache-Control", "no-store")
 	writeActivityJSON(w, http.StatusOK, actorDocument)
 }
 
@@ -174,18 +176,15 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 		writeActivityJSON(w, http.StatusOK, map[string]any{"@context": "https://www.w3.org/ns/activitystreams", "id": s.actorURL() + "/outbox", "type": "OrderedCollection", "totalItems": 0, "orderedItems": []any{}})
 		return
 	}
-	if s.state == nil {
-		writeError(w, http.StatusServiceUnavailable, "federation_storage_unavailable", "Federation storage is unavailable")
-		return
-	}
-	actorURI := s.cfg.PublicBaseURL + "/users/" + url.PathEscape(username)
-	actor, err := s.state.ActorByURI(r.Context(), actorURI)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	actor, err := s.resolveLocalActor(ctx, username)
+	if errors.Is(err, backend.ErrActorNotFound) {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found or federation is disabled")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "outbox_unavailable", "Outbox is unavailable")
+		writeError(w, http.StatusServiceUnavailable, "outbox_unavailable", "Actor eligibility lookup is unavailable")
 		return
 	}
 	items, total, err := s.state.ListOutbox(r.Context(), actor.ActorURI, 40)
@@ -193,6 +192,8 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "outbox_unavailable", "Outbox is unavailable")
 		return
 	}
+	w.Header().Set("Vary", "Accept")
+	w.Header().Set("Cache-Control", "no-store")
 	writeActivityJSON(w, http.StatusOK, map[string]any{"@context": "https://www.w3.org/ns/activitystreams", "id": actor.ActorURI + "/outbox", "type": "OrderedCollection", "totalItems": total, "orderedItems": items})
 }
 
@@ -205,17 +206,18 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "actor_not_found", "The service actor does not accept user activities")
 		return
 	}
-	localActorURI := s.cfg.PublicBaseURL + "/users/" + url.PathEscape(r.PathValue("username"))
-	localActor, err := s.state.ActorByURI(r.Context(), localActorURI)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	localActor, err := s.resolveLocalActor(ctx, r.PathValue("username"))
+	if errors.Is(err, backend.ErrActorNotFound) {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found or federation is disabled")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Local actor lookup is unavailable")
+		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Local actor eligibility lookup is unavailable")
 		return
 	}
-	if r.Header.Get("Content-Type") != "" && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/activity+json") && !strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/ld+json") {
+	if !isActivityPubContentType(r.Header.Get("Content-Type")) {
 		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "ActivityPub content type is required")
 		return
 	}
@@ -244,6 +246,24 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "ActivityPub activity type is not supported")
 		return
 	}
+	// Recheck consent and account status after signature verification. This
+	// closes the window where an opt-out during verification could still be
+	// acknowledged as a newly accepted inbox activity.
+	currentActor, err := s.resolveLocalActor(ctx, localActor.Username)
+	if errors.Is(err, backend.ErrActorNotFound) {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found or federation is disabled")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Local actor eligibility lookup is unavailable")
+		return
+	}
+	if currentActor.UserID != localActor.UserID || currentActor.ActorURI != localActor.ActorURI {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Local actor identity changed during inbox processing")
+		return
+	}
+	localActor = currentActor
+
 	if err := s.state.StoreRemoteActor(r.Context(), verified.Owner, verified.ID, verified.PEM, verified.Inbox, verified.SharedInbox); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "remote_actor_persistence_failed", "Remote actor metadata could not be persisted")
 		return
@@ -253,8 +273,17 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "inbox_persistence_failed", "ActivityPub inbox could not durably accept the activity")
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", activity.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "duplicate": !inserted, "recipient": localActor.ActorURI})
+}
+
+func isActivityPubContentType(raw string) bool {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(mediaType, activityJSON) || strings.EqualFold(mediaType, ldJSON)
 }
 
 func isHTTPSURI(raw string) bool {
