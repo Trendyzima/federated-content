@@ -65,12 +65,12 @@ func TestLocalWebFingerProvisionsDurableActorFromBackend(t *testing.T) {
 	if err := json.Unmarshal(finger.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Subject != "acct:"+handle+"@testagram.site" || len(result.Links) != 1 || result.Links[0].Href != "https://federation.testagram.site/users/"+userID {
+	if result.Subject != "acct:"+handle+"@testagram.site" || len(result.Links) != 1 || result.Links[0].Href != "https://federation.testagram.site/users/"+handle {
 		t.Fatalf("unexpected WebFinger response: %#v", result)
 	}
 
 	actor := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/users/"+userID, nil)
+	req := httptest.NewRequest(http.MethodGet, "/users/"+handle, nil)
 	req.Header.Set("Accept", "application/activity+json")
 	handler.ServeHTTP(actor, req)
 	if actor.Code != http.StatusOK {
