@@ -45,7 +45,7 @@ The database currently stores accepted inbox activities and delivery jobs; stora
 ## Service contract
 
 - Public ActivityPub ingress and discovery terminate at this service, not at XClone or the public Backend API.
-- Federation-to-Backend calls use `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN` on a private network. The token must be at least 32 characters and must match the Backend's Federation service token.
+- Federation-to-Backend calls use `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN` on a private network. The token must be at least 32 characters and must match the Backend's Federation service token. Readiness calls the private `GET /internal/v1/federation/readyz` endpoint with that token; it deliberately does not depend on Algorithm's public home-feed readiness.
 - Backend owns the local-user lookup and eligibility decision. Federation must not create or infer local accounts from usernames.
 - Backend owns post visibility and permissions. Federation may persist remote protocol records but cannot grant local access.
 - Activity delivery is asynchronous. Local publishing must not fail merely because a remote instance is unavailable.
