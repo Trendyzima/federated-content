@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -47,7 +48,12 @@ func (s *Server) enqueueAuthorizedActivity(w http.ResponseWriter, r *http.Reques
 	decoder.DisallowUnknownFields()
 	var input enqueueActivityRequest
 	if err := decoder.Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_activity_request", "The activity request is invalid")
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "activity_too_large", "The activity request exceeds 1 MiB")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_activity_request", "The activity request is invalid")
+		}
 		return
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
