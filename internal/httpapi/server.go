@@ -244,6 +244,23 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "ActivityPub activity type is not supported")
 		return
 	}
+	// Recheck eligibility immediately before persistence so a concurrent opt-out
+	// during signature verification cannot leave a newly accepted inbox activity.
+	currentActor, err := s.resolveLocalActor(ctx, localActor.Username)
+	if errors.Is(err, backend.ErrActorNotFound) {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Actor not found or federation is disabled")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Local actor eligibility lookup is unavailable")
+		return
+	}
+	if currentActor.UserID != localActor.UserID || currentActor.ActorURI != localActor.ActorURI {
+		writeError(w, http.StatusNotFound, "actor_not_found", "Local actor identity changed during inbox processing")
+		return
+	}
+	localActor = currentActor
+
 	if err := s.state.StoreRemoteActor(r.Context(), verified.Owner, verified.ID, verified.PEM, verified.Inbox, verified.SharedInbox); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "remote_actor_persistence_failed", "Remote actor metadata could not be persisted")
 		return
