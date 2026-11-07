@@ -2,7 +2,10 @@ package backend
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"errors"
 	"fmt"
 	"net/http"
@@ -39,6 +42,7 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	copyClient := *client
+	if copyClient.Timeout <= 0 || copyClient.Timeout > 10*time.Second { copyClient.Timeout = 5*time.Second }
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{baseURL: baseURL, token: token, http: &copyClient}, nil
 }
@@ -66,6 +70,8 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return ActorProfile{}, fmt.Errorf("Backend actor lookup failed: %w", err)
@@ -81,7 +87,11 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 		OK   bool         `json:"ok"`
 		Data ActorProfile `json:"data"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(nil, resp.Body, 64<<10)).Decode(&envelope); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
+	if err != nil || len(raw) > 64<<10 {
+		return ActorProfile{}, errors.New("Backend actor lookup response exceeded 64 KiB")
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return ActorProfile{}, errors.New("Backend actor lookup returned invalid JSON")
 	}
 	if !envelope.OK || !envelope.Data.FederationEnabled || envelope.Data.UserID == "" || envelope.Data.Handle == "" || (expectedHandle != "" && envelope.Data.Handle != expectedHandle) {
@@ -96,6 +106,9 @@ func (c *Client) Ready(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("Backend readiness check failed: %w", err)
@@ -105,6 +118,13 @@ func (c *Client) Ready(ctx context.Context) error {
 		return fmt.Errorf("Backend is not ready (HTTP %d)", resp.StatusCode)
 	}
 	return nil
+}
+
+
+func newRequestID() string {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err == nil { return hex.EncodeToString(raw[:]) }
+	return fmt.Sprintf("federation-%d", time.Now().UnixNano())
 }
 
 var ErrActorNotFound = errors.New("local actor not found")
