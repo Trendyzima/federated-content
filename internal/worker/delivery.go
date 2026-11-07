@@ -112,7 +112,7 @@ func (w *DeliveryWorker) deliver(ctx context.Context, delivery store.Delivery) e
 		}
 		return nil
 	}
-	permanent := response.StatusCode >= 400 && response.StatusCode < 500 &&
+	permanent := response.StatusCode >= 300 && response.StatusCode < 500 &&
 		response.StatusCode != http.StatusRequestTimeout &&
 		response.StatusCode != http.StatusTooEarly &&
 		response.StatusCode != http.StatusTooManyRequests
