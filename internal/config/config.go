@@ -24,6 +24,7 @@ type Config struct {
 	BackendInternalURL    string
 	BackendInternalToken  string
 	DeliveryWorkerEnabled bool
+	OutboxPollerEnabled   bool
 }
 
 func Load() (Config, error) {
@@ -45,6 +46,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("FEDERATION_DELIVERY_WORKER_ENABLED must be true or false")
 	}
 	cfg.DeliveryWorkerEnabled = deliveryWorkerEnabled
+	outboxPollerEnabled, err := strconv.ParseBool(env("FEDERATION_OUTBOX_POLLER_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("FEDERATION_OUTBOX_POLLER_ENABLED must be true or false")
+	}
+	cfg.OutboxPollerEnabled = outboxPollerEnabled
 	if cfg.HTTPAddr == "" || cfg.InstanceDomain == "" || cfg.ServiceActorUsername == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR, INSTANCE_DOMAIN and SERVICE_ACTOR_USERNAME must not be empty")
 	}
@@ -64,6 +70,9 @@ func Load() (Config, error) {
 	}
 	if (cfg.BackendInternalURL == "") != (cfg.BackendInternalToken == "") {
 		return Config{}, fmt.Errorf("BACKEND_INTERNAL_URL and BACKEND_INTERNAL_TOKEN must be configured together")
+	}
+	if cfg.OutboxPollerEnabled && (!cfg.DeliveryWorkerEnabled || cfg.FederationDatabaseURL == "" || cfg.BackendInternalURL == "") {
+		return Config{}, fmt.Errorf("FEDERATION_OUTBOX_POLLER_ENABLED requires FEDERATION_DATABASE_URL, BACKEND_INTERNAL_URL, BACKEND_INTERNAL_TOKEN and FEDERATION_DELIVERY_WORKER_ENABLED=true")
 	}
 	if cfg.BackendInternalURL != "" {
 		backendURL, backendErr := url.Parse(cfg.BackendInternalURL)
