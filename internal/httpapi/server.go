@@ -175,7 +175,7 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.state == nil {
-		writeError(w, http.StatusServiceUnavailable, "federation storage is unavailable")
+		writeError(w, http.StatusServiceUnavailable, "federation_storage_unavailable", "Federation storage is unavailable")
 		return
 	}
 	actorURI := s.cfg.PublicBaseURL + "/users/" + url.PathEscape(username)
