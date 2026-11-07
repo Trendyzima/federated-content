@@ -24,6 +24,7 @@ type Config struct {
 	BackendInternalURL    string
 	BackendInternalToken  string
 	DeliveryWorkerEnabled bool
+	OutboxPollerEnabled bool
 }
 
 func Load() (Config, error) {
@@ -76,7 +77,7 @@ func Load() (Config, error) {
 			(backendURL.Scheme != "https" && !(backendURL.Scheme == "http" && (backendURL.Hostname() == "api" || backendURL.Hostname() == "localhost" || backendURL.Hostname() == "127.0.0.1"))) {
 			return Config{}, fmt.Errorf("BACKEND_INTERNAL_URL must be HTTPS (HTTP only for the private api or localhost service)")
 		}
-		if len(cfg.BackendInternalToken) < 32 || strings.ContainsAny(cfg.BackendInternalToken, "\\r\\n") {
+		if len(cfg.BackendInternalToken) < 32 || strings.ContainsAny(cfg.BackendInternalToken, "\r\n") {
 			return Config{}, fmt.Errorf("BACKEND_INTERNAL_TOKEN must contain at least 32 characters")
 		}
 	}
