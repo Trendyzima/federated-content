@@ -90,9 +90,9 @@ func TestOutboxReturnsEmptyOrderedCollection(t *testing.T) {
 
 func TestActivityPubContentTypeValidation(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name  string
 		value string
-		want bool
+		want  bool
 	}{
 		{"activity json", "application/activity+json", true},
 		{"activity json with charset", "application/activity+json; charset=utf-8", true},
