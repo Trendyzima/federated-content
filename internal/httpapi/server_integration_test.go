@@ -51,6 +51,12 @@ func TestLocalWebFingerProvisionsDurableActorFromBackend(t *testing.T) {
 	cfg := config.Config{HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site", InstanceDomain: "testagram.site", ServiceActorUsername: "testagram", ServiceActorName: "Testagram"}
 	handler := NewWithRuntime(cfg, slog.New(slog.NewTextHandler(os.Stdout, nil)), state, backendClient)
 
+	ready := httptest.NewRecorder()
+	handler.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if ready.Code != http.StatusOK {
+		t.Fatalf("readiness did not use private Backend contract: status=%d body=%s", ready.Code, ready.Body.String())
+	}
+
 	finger := httptest.NewRecorder()
 	handler.ServeHTTP(finger, httptest.NewRequest(http.MethodGet, "/.well-known/webfinger?resource=acct:"+handle+"@testagram.site", nil))
 	if finger.Code != http.StatusOK {
