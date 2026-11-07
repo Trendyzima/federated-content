@@ -14,6 +14,7 @@ import (
 	"github.com/Trendyzima/federated-content/internal/config"
 	"github.com/Trendyzima/federated-content/internal/httpapi"
 	"github.com/Trendyzima/federated-content/internal/store"
+	"github.com/Trendyzima/federated-content/internal/worker"
 )
 
 func main() {
@@ -54,6 +55,18 @@ func main() {
 		}
 	}
 
+	var deliveryWorker *worker.DeliveryWorker
+	if cfg.DeliveryWorkerEnabled {
+		if federationStore == nil {
+			logger.Error("delivery worker requires FEDERATION_DATABASE_URL")
+			os.Exit(1)
+		}
+		deliveryWorker, err = worker.NewDeliveryWorker(federationStore, nil, logger)
+		if err != nil {
+			logger.Error("delivery worker initialization failed", "error", err)
+			os.Exit(1)
+		}
+	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpapi.NewWithRuntime(cfg, logger, federationStore, backendClient),
@@ -66,6 +79,11 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if deliveryWorker != nil {
+		go deliveryWorker.Run(ctx)
+		logger.Info("federation outbound delivery worker enabled")
+	}
 
 	go func() {
 		logger.Info("federation API starting", "addr", cfg.HTTPAddr, "base_url", cfg.PublicBaseURL)
