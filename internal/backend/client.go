@@ -91,10 +91,11 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 }
 
 func (c *Client) Ready(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/readyz", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/v1/federation/readyz", nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("Backend readiness check failed: %w", err)
