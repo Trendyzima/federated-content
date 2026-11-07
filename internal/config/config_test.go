@@ -128,12 +128,29 @@ func TestLoadRejectsPathLikeActorUsernames(t *testing.T) {
 }
 
 func TestOutboxPollerFlagIsOptIn(t *testing.T) {
- setValidEnvironment(t); t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "")
- cfg, err := Load(); if err != nil { t.Fatal(err) }; if cfg.OutboxPollerEnabled { t.Fatal("outbox poller must remain disabled by default") }
- t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "true"); cfg, err = Load(); if err != nil { t.Fatal(err) }; if !cfg.OutboxPollerEnabled { t.Fatal("explicitly enabled outbox poller was not enabled") }
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OutboxPollerEnabled {
+		t.Fatal("Backend outbox poller must remain disabled by default")
+	}
+	t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.OutboxPollerEnabled {
+		t.Fatal("explicitly enabled Backend outbox poller was not enabled")
+	}
 }
 
 func TestOutboxPollerRejectsMalformedEnableFlag(t *testing.T) {
- setValidEnvironment(t); t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "sometimes")
- if _, err := Load(); err == nil { t.Fatal("expected malformed outbox poller flag to be rejected") }
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected malformed outbox poller flag to be rejected")
+	}
 }
