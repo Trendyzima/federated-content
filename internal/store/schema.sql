@@ -65,3 +65,9 @@ CREATE TABLE IF NOT EXISTS remote_followers (
     accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (local_user_id, remote_actor_uri)
 );
+
+CREATE TABLE IF NOT EXISTS service_state (
+    state_key TEXT PRIMARY KEY,
+    state_value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
