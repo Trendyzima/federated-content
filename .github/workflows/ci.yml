@@ -49,3 +49,28 @@ jobs:
         run: go test -race -cover ./...
       - name: Build
         run: go build ./cmd/federation-api
+
+  format-runtime-branch:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feat/durable-activitypub-runtime' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/durable-activitypub-runtime
+          persist-credentials: true
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+      - name: Format Go sources on this implementation branch
+        shell: bash
+        run: |
+          gofmt -w $(find . -type f -name '*.go')
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add '*.go'
+            git commit -m "style: format ActivityPub runtime implementation"
+            git push origin HEAD:feat/durable-activitypub-runtime
+          fi
