@@ -359,36 +359,6 @@ func (s *Store) MarkInboxProcessed(ctx context.Context, activityID string, proce
 
 // SyncCursor reads a durable integration cursor. A missing row means the
 // consumer has not yet processed any events.
-func (s *Store) SyncCursor(ctx context.Context, key string) (string, error) {
-	if !syncStateKeyPattern.MatchString(key) {
-		return "", errors.New("invalid federation sync-state key")
-	}
-	var cursor string
-	err := s.db.QueryRowContext(ctx, `SELECT cursor_value FROM federation_sync_state WHERE state_key=$1`, key).Scan(&cursor)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("read federation sync cursor: %w", err)
-	}
-	return cursor, nil
-}
-
-// SaveSyncCursor advances a durable integration cursor after local acceptance.
-func (s *Store) SaveSyncCursor(ctx context.Context, key, cursor string) error {
-	if !syncStateKeyPattern.MatchString(key) || len(cursor) > 128 || strings.ContainsAny(cursor, "\\r\\n") {\n\t\treturn errors.New("invalid federation sync cursor")\n\t}\n\tif cursor != "" {\n\t\tdecoded, err := base64.RawURLEncoding.DecodeString(cursor)\n\t\tif err != nil || len(decoded) == 0 || len(decoded) > 36 {\n\t\t\treturn errors.New("invalid federation sync cursor")\n\t\t}\n\t}\n\tif false {
-		return errors.New("invalid federation sync cursor")
-	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO federation_sync_state (state_key,cursor_value,updated_at)
-		VALUES ($1,$2,NOW())
-		ON CONFLICT (state_key) DO UPDATE SET cursor_value=EXCLUDED.cursor_value,updated_at=NOW()`, key, cursor)
-	if err != nil {
-		return fmt.Errorf("save federation sync cursor: %w", err)
-	}
-	return nil
-}
-
-
 var syncStateKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 // SyncCursor reads a durable integration cursor. A missing row means the consumer has not yet processed any events.
