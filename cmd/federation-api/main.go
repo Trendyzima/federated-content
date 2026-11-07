@@ -56,6 +56,18 @@ func main() {
 	}
 
 	var deliveryWorker *worker.DeliveryWorker
+	var outboxPoller *worker.OutboxPoller
+	if cfg.OutboxPollerEnabled {
+		if federationStore == nil || backendClient == nil {
+			logger.Error("Backend outbox poller requires Federation storage and private Backend client")
+			os.Exit(1)
+		}
+		outboxPoller, err = worker.NewOutboxPoller(federationStore, backendClient, cfg.PublicBaseURL, logger)
+		if err != nil {
+			logger.Error("Federation Backend outbox poller initialization failed", "error", err)
+			os.Exit(1)
+		}
+	}
 	if cfg.DeliveryWorkerEnabled {
 		if federationStore == nil {
 			logger.Error("delivery worker requires FEDERATION_DATABASE_URL")
@@ -81,6 +93,7 @@ func main() {
 	defer stop()
 
 	var deliveryWorkerDone chan struct{}
+	var outboxPollerDone chan struct{}
 	if deliveryWorker != nil {
 		deliveryWorkerDone = make(chan struct{})
 		go func() {
@@ -98,6 +111,15 @@ func main() {
 		}
 	}()
 
+	if outboxPoller != nil {
+		outboxPollerDone = make(chan struct{})
+		go func() {
+			defer close(outboxPollerDone)
+			outboxPoller.Run(ctx)
+		}()
+		logger.Info("Federation Backend outbox poller enabled")
+	}
+
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -107,6 +129,9 @@ func main() {
 	}
 	if deliveryWorkerDone != nil {
 		<-deliveryWorkerDone
+	}
+	if outboxPollerDone != nil {
+		<-outboxPollerDone
 	}
 	logger.Info("federation API stopped")
 }
