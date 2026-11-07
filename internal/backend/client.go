@@ -118,7 +118,6 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 	return envelope.Data, nil
 }
 
-
 func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (OutboxPage, error) {
 	if limit < 1 || limit > 99 {
 		return OutboxPage{}, errors.New("outbox limit must be between 1 and 99")
@@ -174,9 +173,13 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 	}
 	seen := make(map[string]struct{}, len(envelope.Data.Events))
 	for _, event := range envelope.Data.Events {
-		if _, duplicate := seen[event.ID]; duplicate { return OutboxPage{}, errors.New("Backend outbox returned duplicate event IDs") }
+		if _, duplicate := seen[event.ID]; duplicate {
+			return OutboxPage{}, errors.New("Backend outbox returned duplicate event IDs")
+		}
 		seen[event.ID] = struct{}{}
-		if _, err := time.Parse(time.RFC3339, event.CreatedAt); err != nil { return OutboxPage{}, errors.New("Backend outbox returned an invalid event timestamp") }
+		if _, err := time.Parse(time.RFC3339, event.CreatedAt); err != nil {
+			return OutboxPage{}, errors.New("Backend outbox returned an invalid event timestamp")
+		}
 		if event.ID == "" || event.EventType != "testagram.post.published" || event.ActorID == "" || event.ObjectID == "" || len(event.Payload) == 0 {
 			return OutboxPage{}, errors.New("Backend outbox returned an invalid or ineligible event")
 		}
@@ -204,10 +207,11 @@ func (c *Client) Ready(ctx context.Context) error {
 	return nil
 }
 
-
 func isPrivateBackendHost(host string) bool {
 	host = strings.Trim(strings.ToLower(host), "[]")
-	if host == "api" || host == "backend" || host == "localhost" || host == "127.0.0.1" || strings.HasSuffix(host, ".local") { return true }
+	if host == "api" || host == "backend" || host == "localhost" || host == "127.0.0.1" || strings.HasSuffix(host, ".local") {
+		return true
+	}
 	ip := net.ParseIP(host)
 	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
 }
