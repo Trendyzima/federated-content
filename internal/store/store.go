@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -382,5 +383,15 @@ func (s *Store) SaveSyncCursor(ctx context.Context, key, cursor string) error {
 	if err != nil {
 		return fmt.Errorf("save federation sync cursor: %w", err)
 	}
+	return nil
+}
+
+const syncStateKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+func (s *Store) RecordOutboxDeadLetter(ctx context.Context, eventID, eventType, reason string, payload []byte) error {
+	if eventID == "" || len(eventID) > 36 || eventType == "" || len(eventType) > 96 || !json.Valid(payload) || (reason != "invalid_event" && reason != "actor_no_longer_eligible") {
+		return errors.New("invalid Backend outbox dead-letter record")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO federation_outbox_dead_letters (event_id,event_type,reason_code,payload) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (event_id) DO UPDATE SET event_id=EXCLUDED.event_id WHERE federation_outbox_dead_letters.event_type=EXCLUDED.event_type AND federation_outbox_dead_letters.reason_code=EXCLUDED.reason_code AND federation_outbox_dead_letters.payload=EXCLUDED.payload`, eventID, eventType, reason, string(payload))
+	if err != nil { return fmt.Errorf("persist Backend outbox dead letter: %w", err) }
 	return nil
 }
