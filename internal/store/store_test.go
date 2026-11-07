@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -108,5 +109,42 @@ func TestDeliveryFailureCanBeDeadLettered(t *testing.T) {
 	}
 	if state != "dead_letter" {
 		t.Fatalf("state=%q, want dead_letter", state)
+	}
+}
+
+func TestConcurrentOpenSerializesSchemaMigration(t *testing.T) {
+	dsn := os.Getenv("FEDERATION_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("FEDERATION_TEST_DATABASE_URL is not configured")
+	}
+	const workers = 8
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			s, err := Open(ctx, dsn)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if err := s.Ping(ctx); err != nil {
+				errs <- err
+			}
+			if err := s.Close(); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent schema initialization failed: %v", err)
 	}
 }
