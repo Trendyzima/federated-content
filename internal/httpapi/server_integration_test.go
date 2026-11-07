@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"log/slog"
 
 	"github.com/Trendyzima/federated-content/internal/backend"
 	"github.com/Trendyzima/federated-content/internal/config"
