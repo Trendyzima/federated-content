@@ -87,6 +87,7 @@ func validBackendOutboxFixture(t *testing.T) (backend.OutboxEvent, backend.Actor
 		ID:          "post_123",
 		AuthorID:    "user_123",
 		ActorHandle: "alice",
+		ActorDisplayName: "Alice",
 		Content:     "Hello from Testagram",
 		Visibility:  "public",
 		CreatedAt:   now,
