@@ -2,16 +2,15 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/Trendyzima/federated-content/internal/store"
 )
 
 const maxInternalActivityBody = 1 << 20
@@ -145,5 +144,3 @@ func validAuthorizedActivity(activity activityEnvelope, expectedID string) bool 
 	return true
 }
 
-var _ = errors.New
-var _ = store.Actor{}
