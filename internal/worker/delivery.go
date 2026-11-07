@@ -131,8 +131,5 @@ func validateInboxURL(raw string) error {
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
 		return errors.New("remote inbox must be an HTTPS URL without credentials or fragment")
 	}
-	if port := u.Port(); port != "" && port != "443" {
-		return errors.New("remote inbox must use HTTPS port 443")
-	}
 	return nil
 }
