@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Testagram Federated Content API
   version: 0.1.0
-  description: Public ActivityPub discovery and actor endpoints. Inbox ingestion is disabled in this release.
+  description: Public ActivityPub discovery and actor endpoints. Inbox requests require valid ActivityPub HTTP Signatures, eligible local recipients, bounded payloads and durable database acceptance.
 servers:
   - url: https://federation.testagram.site
 paths:
@@ -19,7 +19,7 @@ paths:
       summary: Service readiness
       responses:
         "200":
-          description: Ready; the initial release has no external dependencies
+          description: Federation database and private Backend identity dependency are reachable
   /.well-known/webfinger:
     get:
       operationId: webfinger
@@ -70,7 +70,7 @@ paths:
   /users/{username}/outbox:
     get:
       operationId: getOutbox
-      summary: Fetch the configured actor's empty initial outbox
+      summary: Fetch the eligible actor's paginated ActivityPub outbox
       parameters:
         - in: path
           name: username
@@ -79,7 +79,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Empty OrderedCollection
+          description: OrderedCollection containing durably accepted outbound activities
           content:
             application/activity+json:
               schema:
@@ -89,13 +89,39 @@ paths:
   /users/{username}/inbox:
     post:
       operationId: receiveActivity
-      summary: ActivityPub inbox, disabled until signature verification ships
+      summary: Receive a signed ActivityPub activity for an eligible local actor
+      description: Requires an ActivityPub HTTP Signature whose key owner matches the activity actor. The local actor's Federation consent and identity are rechecked immediately before the activity is durably persisted. Duplicate activity IDs are acknowledged idempotently.
       parameters:
         - in: path
           name: username
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/activity+json:
+            schema:
+              type: object
+              required: [id, type, actor]
+              properties:
+                id: { type: string, format: uri }
+                type: { type: string }
+                actor: { type: string, format: uri }
       responses:
-        "501":
-          description: Inbox ingestion is not enabled in this release
+        "202":
+          description: Activity durably accepted or acknowledged as a duplicate
+        "400":
+          description: Activity identity or actor/signature binding is invalid
+        "401":
+          description: ActivityPub HTTP Signature is invalid
+        "404":
+          description: Local actor does not exist, has opted out, or changed during validation
+        "413":
+          description: Activity exceeds the one-megabyte request limit
+        "415":
+          description: ActivityPub content type is required
+        "422":
+          description: Activity type is not supported
+        "503":
+          description: Backend actor eligibility or durable Federation persistence is unavailable
