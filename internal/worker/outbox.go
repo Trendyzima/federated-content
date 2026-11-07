@@ -26,6 +26,7 @@ type OutboxSource interface {
 }
 
 type OutboxStore interface {
+	RecordOutboxDeadLetter(context.Context, string, string, string, []byte) error
 	SyncCursor(context.Context, string) (string, error)
 	SaveSyncCursor(context.Context, string, string) error
 	EnsureActor(context.Context, string, string, string, string, string) (store.Actor, error)
@@ -41,6 +42,11 @@ type OutboxPoller struct {
 	logger *slog.Logger
 	interval time.Duration
 }
+
+type permanentOutboxError struct { code string; err error }
+func (e *permanentOutboxError) Error() string { return e.err.Error() }
+func (e *permanentOutboxError) Unwrap() error { return e.err }
+func permanentOutbox(code, message string) error { return &permanentOutboxError{code: code, err: errors.New(message)} }
 
 type publishedPostPayload struct {
 	ID string `json:"id"`
@@ -81,12 +87,15 @@ func (w *OutboxPoller) ProcessBatch(ctx context.Context) (int, error) {
 	processed := 0
 	for _, event := range page.Events {
 		if err := w.processEvent(ctx, event); err != nil {
-			return processed, fmt.Errorf("process Backend outbox event %s: %w", event.ID, err)
+			var permanent *permanentOutboxError
+			if !errors.As(err, &permanent) { return processed, fmt.Errorf("process Backend outbox event %s: %w", event.ID, err) }
+			quarantine, marshalErr := json.Marshal(map[string]any{"event_id": event.ID, "event_type": event.EventType, "actor_id": event.ActorID, "object_id": event.ObjectID, "payload_base64": base64.RawURLEncoding.EncodeToString(event.Payload)})
+			if marshalErr != nil { return processed, marshalErr }
+			if err := w.store.RecordOutboxDeadLetter(ctx, event.ID, event.EventType, permanent.code, quarantine); err != nil { return processed, err }
+			w.logger.Warn("Backend federation outbox event quarantined", "event_id", event.ID, "reason", permanent.code)
 		}
 		next := base64.RawURLEncoding.EncodeToString([]byte(event.ID))
-		if err := w.store.SaveSyncCursor(ctx, backendOutboxCursorKey, next); err != nil {
-			return processed, err
-		}
+		if err := w.store.SaveSyncCursor(ctx, backendOutboxCursorKey, next); err != nil { return processed, err }
 		processed++
 	}
 	return processed, nil
@@ -94,35 +103,36 @@ func (w *OutboxPoller) ProcessBatch(ctx context.Context) (int, error) {
 
 func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEvent) error {
 	if event.ID == "" || event.EventType != "testagram.post.published" || event.ActorID == "" || event.ObjectID == "" || len(event.Payload) == 0 {
-		return errors.New("Backend outbox event is incomplete or unsupported")
+		return permanentOutbox("invalid_event", "Backend outbox event is incomplete or unsupported")
 	}
 	var payload publishedPostPayload
 	decoder := json.NewDecoder(strings.NewReader(string(event.Payload)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
-		return errors.New("Backend post event payload is invalid")
+		return permanentOutbox("invalid_event", "Backend post event payload is invalid")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return errors.New("Backend post event payload must contain exactly one JSON object")
+		return permanentOutbox("invalid_event", "Backend post event payload must contain exactly one JSON object")
 	}
 	if payload.ID != event.ObjectID || payload.AuthorID != event.ActorID || payload.Visibility != "public" || payload.Sensitive ||
 		payload.ActorHandle == "" || len(payload.ActorHandle) > 30 || !utf8.ValidString(payload.Content) ||
 		strings.TrimSpace(payload.Content) == "" || utf8.RuneCountInString(payload.Content) > 5000 {
-		return errors.New("Backend post event failed federation eligibility checks")
+		return permanentOutbox("invalid_event", "Backend post event failed federation eligibility checks")
 	}
 	if _, err := time.Parse(time.RFC3339, payload.CreatedAt); err != nil {
-		return errors.New("Backend post event has an invalid creation timestamp")
+		return permanentOutbox("invalid_event", "Backend post event has an invalid creation timestamp")
 	}
 	if _, err := time.Parse(time.RFC3339, event.CreatedAt); err != nil {
-		return errors.New("Backend outbox envelope has an invalid creation timestamp")
+		return permanentOutbox("invalid_event", "Backend outbox envelope has an invalid creation timestamp")
 	}
 
 	profile, err := w.backend.ResolveActorByID(ctx, event.ActorID)
 	if err != nil {
+		if errors.Is(err, backend.ErrActorNotFound) { return permanentOutbox("actor_no_longer_eligible", "Backend actor is no longer eligible for federation") }
 		return fmt.Errorf("revalidate Backend actor eligibility: %w", err)
 	}
 	if profile.UserID != event.ActorID || !profile.FederationEnabled || profile.Handle != strings.ToLower(payload.ActorHandle) {
-		return errors.New("Backend actor identity or federation consent no longer matches the event")
+		return permanentOutbox("actor_no_longer_eligible", "Backend actor identity or federation consent no longer matches the event")
 	}
 	actorURI := w.publicBaseURL + "/users/" + url.PathEscape(profile.Handle)
 	actor, err := w.store.EnsureActor(ctx, profile.UserID, profile.Handle, actorURI, profile.DisplayName, profile.Summary)
@@ -130,7 +140,7 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 		return fmt.Errorf("ensure local ActivityPub actor: %w", err)
 	}
 	if actor.ActorURI != actorURI || actor.PrivateKeyPEM == "" {
-		return errors.New("local ActivityPub signing identity is unavailable")
+		return permanentOutbox("actor_no_longer_eligible", "local ActivityPub signing identity is unavailable")
 	}
 
 	activityID := actorURI + "/activities/" + url.PathEscape(event.ID)
