@@ -2,9 +2,14 @@ package backend
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,6 +24,21 @@ type ActorProfile struct {
 	FederationEnabled bool   `json:"federation_enabled"`
 }
 
+type OutboxEvent struct {
+	ID        string          `json:"$id"`
+	EventType string          `json:"event_type"`
+	ActorID   string          `json:"actor_id"`
+	ObjectID  string          `json:"object_id"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt string          `json:"created_at"`
+}
+
+type OutboxPage struct {
+	Events     []OutboxEvent `json:"events"`
+	NextCursor string        `json:"next_cursor"`
+	HasMore    bool          `json:"has_more"`
+}
+
 type Client struct {
 	baseURL string
 	token   string
@@ -29,7 +49,7 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	token = strings.TrimSpace(token)
 	u, err := url.Parse(baseURL)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "api" || u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"))) {
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "https" && !(u.Scheme == "http" && isPrivateBackendHost(u.Hostname()))) {
 		return nil, errors.New("Backend URL must be HTTPS (HTTP only for private api or localhost)")
 	}
 	if len(token) < 32 || strings.ContainsAny(token, "\r\n") {
@@ -39,6 +59,9 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	copyClient := *client
+	if copyClient.Timeout <= 0 || copyClient.Timeout > 10*time.Second {
+		copyClient.Timeout = 5 * time.Second
+	}
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{baseURL: baseURL, token: token, http: &copyClient}, nil
 }
@@ -66,6 +89,8 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return ActorProfile{}, fmt.Errorf("Backend actor lookup failed: %w", err)
@@ -81,11 +106,91 @@ func (c *Client) resolveActorPath(ctx context.Context, path, expectedHandle stri
 		OK   bool         `json:"ok"`
 		Data ActorProfile `json:"data"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(nil, resp.Body, 64<<10)).Decode(&envelope); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
+	if err != nil {
+		return ActorProfile{}, fmt.Errorf("read Backend actor lookup response: %w", err)
+	}
+	if len(raw) > 64<<10 {
+		return ActorProfile{}, errors.New("Backend actor lookup response exceeded 64 KiB")
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return ActorProfile{}, errors.New("Backend actor lookup returned invalid JSON")
 	}
 	if !envelope.OK || !envelope.Data.FederationEnabled || envelope.Data.UserID == "" || envelope.Data.Handle == "" || (expectedHandle != "" && envelope.Data.Handle != expectedHandle) {
 		return ActorProfile{}, errors.New("Backend actor lookup returned an invalid or ineligible profile")
+	}
+	return envelope.Data, nil
+}
+
+func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (OutboxPage, error) {
+	if limit < 1 || limit > 99 {
+		return OutboxPage{}, errors.New("outbox limit must be between 1 and 99")
+	}
+	if len(after) > 128 || strings.ContainsAny(after, "\r\n") {
+		return OutboxPage{}, errors.New("outbox cursor is invalid")
+	}
+	if after != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(after)
+		if err != nil || len(decoded) == 0 || len(decoded) > 36 {
+			return OutboxPage{}, errors.New("outbox cursor is invalid")
+		}
+	}
+	query := url.Values{}
+	query.Set("limit", fmt.Sprint(limit))
+	if after != "" {
+		query.Set("after", after)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/v1/federation/outbox?"+query.Encode(), nil)
+	if err != nil {
+		return OutboxPage{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return OutboxPage{}, fmt.Errorf("Backend outbox request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil {
+		return OutboxPage{}, fmt.Errorf("read Backend outbox response: %w", err)
+	}
+	if len(raw) > 1<<20 {
+		return OutboxPage{}, errors.New("Backend outbox response exceeded 1 MiB")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return OutboxPage{}, fmt.Errorf("Backend outbox returned HTTP %d", resp.StatusCode)
+	}
+	var envelope struct {
+		OK   bool       `json:"ok"`
+		Data OutboxPage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || !envelope.OK {
+		return OutboxPage{}, errors.New("Backend outbox returned an invalid response envelope")
+	}
+	if len(envelope.Data.Events) > limit || (envelope.Data.HasMore && envelope.Data.NextCursor == "") {
+		return OutboxPage{}, errors.New("Backend outbox returned invalid pagination metadata")
+	}
+	if envelope.Data.NextCursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(envelope.Data.NextCursor)
+		if err != nil || len(decoded) == 0 || len(decoded) > 36 {
+			return OutboxPage{}, errors.New("Backend outbox returned an invalid next cursor")
+		}
+	}
+	seen := make(map[string]struct{}, len(envelope.Data.Events))
+	for _, event := range envelope.Data.Events {
+		if _, duplicate := seen[event.ID]; duplicate {
+			return OutboxPage{}, errors.New("Backend outbox returned duplicate event IDs")
+		}
+		seen[event.ID] = struct{}{}
+		if _, err := time.Parse(time.RFC3339, event.CreatedAt); err != nil {
+			return OutboxPage{}, errors.New("Backend outbox returned an invalid event timestamp")
+		}
+		if event.ID == "" || event.EventType != "testagram.post.published" || event.ActorID == "" || event.ObjectID == "" || len(event.Payload) == 0 {
+			return OutboxPage{}, errors.New("Backend outbox returned an invalid or ineligible event")
+		}
 	}
 	return envelope.Data, nil
 }
@@ -96,6 +201,9 @@ func (c *Client) Ready(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("Backend readiness check failed: %w", err)
@@ -105,6 +213,23 @@ func (c *Client) Ready(ctx context.Context) error {
 		return fmt.Errorf("Backend is not ready (HTTP %d)", resp.StatusCode)
 	}
 	return nil
+}
+
+func isPrivateBackendHost(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "api" || host == "backend" || host == "localhost" || host == "127.0.0.1" || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
+}
+
+func newRequestID() string {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err == nil {
+		return hex.EncodeToString(raw[:])
+	}
+	return fmt.Sprintf("federation-%d", time.Now().UnixNano())
 }
 
 var ErrActorNotFound = errors.New("local actor not found")
