@@ -35,27 +35,34 @@ type OutboxStore interface {
 }
 
 type OutboxPoller struct {
-	backend OutboxSource
-	store OutboxStore
-	publicBaseURL string
+	backend        OutboxSource
+	store          OutboxStore
+	publicBaseURL  string
 	instanceDomain string
-	logger *slog.Logger
-	interval time.Duration
+	logger         *slog.Logger
+	interval       time.Duration
 }
 
-type permanentOutboxError struct { code string; err error }
+type permanentOutboxError struct {
+	code string
+	err  error
+}
+
 func (e *permanentOutboxError) Error() string { return e.err.Error() }
 func (e *permanentOutboxError) Unwrap() error { return e.err }
-func permanentOutbox(code, message string) error { return &permanentOutboxError{code: code, err: errors.New(message)} }
+
+func permanentOutbox(code, message string) error {
+	return &permanentOutboxError{code: code, err: errors.New(message)}
+}
 
 type publishedPostPayload struct {
-	ID string `json:"id"`
-	AuthorID string `json:"author_id"`
-	ActorHandle string `json:"actor_handle"`
-	Content string `json:"content"`
-	Visibility string `json:"visibility"`
-	Sensitive bool `json:"sensitive"`
-	CreatedAt string `json:"created_at"`
+	ID          string \`json:"id"\`
+	AuthorID    string \`json:"author_id"\`
+	ActorHandle string \`json:"actor_handle"\`
+	Content     string \`json:"content"\`
+	Visibility  string \`json:"visibility"\`
+	Sensitive   bool   \`json:"sensitive"\`
+	CreatedAt   string \`json:"created_at"\`
 }
 
 func NewOutboxPoller(source OutboxSource, state OutboxStore, publicBaseURL, instanceDomain string, logger *slog.Logger) (*OutboxPoller, error) {
@@ -69,7 +76,14 @@ func NewOutboxPoller(source OutboxSource, state OutboxStore, publicBaseURL, inst
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &OutboxPoller{backend: source, store: state, publicBaseURL: publicBaseURL, instanceDomain: instanceDomain, logger: logger, interval: 5*time.Second}, nil
+	return &OutboxPoller{
+		backend:        source,
+		store:          state,
+		publicBaseURL:  publicBaseURL,
+		instanceDomain: instanceDomain,
+		logger:         logger,
+		interval:       5 * time.Second,
+	}, nil
 }
 
 func (w *OutboxPoller) ProcessBatch(ctx context.Context) (int, error) {
@@ -88,14 +102,28 @@ func (w *OutboxPoller) ProcessBatch(ctx context.Context) (int, error) {
 	for _, event := range page.Events {
 		if err := w.processEvent(ctx, event); err != nil {
 			var permanent *permanentOutboxError
-			if !errors.As(err, &permanent) { return processed, fmt.Errorf("process Backend outbox event %s: %w", event.ID, err) }
-			quarantine, marshalErr := json.Marshal(map[string]any{"event_id": event.ID, "event_type": event.EventType, "actor_id": event.ActorID, "object_id": event.ObjectID, "payload_base64": base64.RawURLEncoding.EncodeToString(event.Payload)})
-			if marshalErr != nil { return processed, marshalErr }
-			if err := w.store.RecordOutboxDeadLetter(ctx, event.ID, event.EventType, permanent.code, quarantine); err != nil { return processed, err }
+			if !errors.As(err, &permanent) {
+				return processed, fmt.Errorf("process Backend outbox event %s: %w", event.ID, err)
+			}
+			quarantine, marshalErr := json.Marshal(map[string]any{
+				"event_id":       event.ID,
+				"event_type":     event.EventType,
+				"actor_id":       event.ActorID,
+				"object_id":      event.ObjectID,
+				"payload_base64": base64.RawURLEncoding.EncodeToString(event.Payload),
+			})
+			if marshalErr != nil {
+				return processed, marshalErr
+			}
+			if err := w.store.RecordOutboxDeadLetter(ctx, event.ID, event.EventType, permanent.code, quarantine); err != nil {
+				return processed, err
+			}
 			w.logger.Warn("Backend federation outbox event quarantined", "event_id", event.ID, "reason", permanent.code)
 		}
 		next := base64.RawURLEncoding.EncodeToString([]byte(event.ID))
-		if err := w.store.SaveSyncCursor(ctx, backendOutboxCursorKey, next); err != nil { return processed, err }
+		if err := w.store.SaveSyncCursor(ctx, backendOutboxCursorKey, next); err != nil {
+			return processed, err
+		}
 		processed++
 	}
 	return processed, nil
@@ -128,12 +156,15 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 
 	profile, err := w.backend.ResolveActorByID(ctx, event.ActorID)
 	if err != nil {
-		if errors.Is(err, backend.ErrActorNotFound) { return permanentOutbox("actor_no_longer_eligible", "Backend actor is no longer eligible for federation") }
+		if errors.Is(err, backend.ErrActorNotFound) {
+			return permanentOutbox("actor_no_longer_eligible", "Backend actor is no longer eligible for federation")
+		}
 		return fmt.Errorf("revalidate Backend actor eligibility: %w", err)
 	}
 	if profile.UserID != event.ActorID || !profile.FederationEnabled || profile.Handle != strings.ToLower(payload.ActorHandle) {
 		return permanentOutbox("actor_no_longer_eligible", "Backend actor identity or federation consent no longer matches the event")
 	}
+
 	actorURI := w.publicBaseURL + "/users/" + url.PathEscape(profile.Handle)
 	actor, err := w.store.EnsureActor(ctx, profile.UserID, profile.Handle, actorURI, profile.DisplayName, profile.Summary)
 	if err != nil {
@@ -146,21 +177,21 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 	activityID := actorURI + "/activities/" + url.PathEscape(event.ID)
 	objectURL := (&url.URL{Scheme: "https", Host: w.instanceDomain, Path: "/posts/" + event.ObjectID}).String()
 	activity := map[string]any{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"id": activityID,
-		"type": "Create",
-		"actor": actor.ActorURI,
+		"@context":  "https://www.w3.org/ns/activitystreams",
+		"id":        activityID,
+		"type":      "Create",
+		"actor":     actor.ActorURI,
 		"published": event.CreatedAt,
-		"to": []string{"https://www.w3.org/ns/activitystreams#Public"},
-		"cc": []string{actor.ActorURI + "/followers"},
+		"to":        []string{"https://www.w3.org/ns/activitystreams#Public"},
+		"cc":        []string{actor.ActorURI + "/followers"},
 		"object": map[string]any{
-			"id": objectURL,
-			"type": "Note",
+			"id":           objectURL,
+			"type":         "Note",
 			"attributedTo": actor.ActorURI,
-			"content": payload.Content,
-			"published": event.CreatedAt,
-			"to": []string{"https://www.w3.org/ns/activitystreams#Public"},
-			"cc": []string{actor.ActorURI + "/followers"},
+			"content":      payload.Content,
+			"published":    event.CreatedAt,
+			"to":           []string{"https://www.w3.org/ns/activitystreams#Public"},
+			"cc":           []string{actor.ActorURI + "/followers"},
 		},
 	}
 	encoded, err := json.Marshal(activity)
