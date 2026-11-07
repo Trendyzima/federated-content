@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -149,5 +151,66 @@ func TestConcurrentOpenSerializesSchemaMigration(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Errorf("concurrent schema initialization failed: %v", err)
+	}
+}
+
+
+func TestRemoteFollowerFanoutAndActivityPubObjectDereference(t *testing.T) {
+	s := integrationStore(t)
+	ctx := context.Background()
+	suffix := time.Now().UTC().Format("150405000000")
+	userID := "test_followers_" + suffix
+	actorURI := "https://federation.testagram.site/users/" + userID
+	actor, err := s.EnsureActor(ctx, userID, "followers_"+suffix, actorURI, "Followers", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteURI := "https://remote.example/users/follower"
+	if err := s.StoreRemoteActor(ctx, remoteURI, remoteURI+"#main-key", "public-key", "https://remote.example/inbox", "https://remote.example/shared-inbox"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddRemoteFollower(ctx, actor.UserID, remoteURI); err != nil {
+		t.Fatal(err)
+	}
+	count, err := s.CountRemoteFollowers(ctx, actor.UserID)
+	if err != nil || count != 1 {
+		t.Fatalf("remote follower count=%d err=%v", count, err)
+	}
+	followers, next, err := s.ListRemoteFollowers(ctx, actor.UserID, "", 10)
+	if err != nil || next != "" || len(followers) != 1 || followers[0] != remoteURI {
+		t.Fatalf("remote followers=%v next=%q err=%v", followers, next, err)
+	}
+	inboxes, err := s.FollowerInboxes(ctx, actor.UserID)
+	if err != nil || len(inboxes) != 1 || inboxes[0] != "https://remote.example/shared-inbox" {
+		t.Fatalf("follower inboxes=%v err=%v", inboxes, err)
+	}
+	remoteInbox, err := s.RemoteActorInbox(ctx, remoteURI)
+	if err != nil || remoteInbox != "https://remote.example/shared-inbox" {
+		t.Fatalf("remote actor inbox=%q err=%v", remoteInbox, err)
+	}
+
+	objectURI := actorURI + "/statuses/post_" + suffix
+	activityID := actorURI + "/activities/create_" + suffix
+	activity := []byte(`{"id":"` + activityID + `","type":"Create","actor":"` + actorURI + `","object":{"id":"` + objectURI + `","type":"Note","content":"hello"}}`)
+	if err := s.EnqueueOutbox(ctx, activityID, actorURI, activity, nil); err != nil {
+		t.Fatal(err)
+	}
+	object, err := s.GetOutboxObject(ctx, actorURI, objectURI)
+	if err != nil || !json.Valid(object) || !strings.Contains(string(object), `"content":"hello"`) {
+		t.Fatalf("dereferenced object=%s err=%v", object, err)
+	}
+	if err := s.SetState(ctx, "test_cursor_"+suffix, "Y3Vyc29y"); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := s.GetState(ctx, "test_cursor_"+suffix)
+	if err != nil || cursor != "Y3Vyc29y" {
+		t.Fatalf("persisted cursor=%q err=%v", cursor, err)
+	}
+	if err := s.RemoveRemoteFollower(ctx, actor.UserID, remoteURI); err != nil {
+		t.Fatal(err)
+	}
+	count, err = s.CountRemoteFollowers(ctx, actor.UserID)
+	if err != nil || count != 0 {
+		t.Fatalf("remote follower count after removal=%d err=%v", count, err)
 	}
 }
