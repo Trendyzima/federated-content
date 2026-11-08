@@ -32,7 +32,17 @@ CREATE TABLE IF NOT EXISTS inbox_activities (
     processed_at TIMESTAMPTZ,
     last_error TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS inbox_activities_pending_idx ON inbox_activities (received_at) WHERE state = 'accepted';
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0);
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS lease_token TEXT;
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ;
+ALTER TABLE inbox_activities DROP CONSTRAINT IF EXISTS inbox_activities_state_check;
+ALTER TABLE inbox_activities ADD CONSTRAINT inbox_activities_state_check
+    CHECK (state IN ('accepted','processing','retry','processed','rejected','dead_letter'));
+DROP INDEX IF EXISTS inbox_activities_pending_idx;
+CREATE INDEX IF NOT EXISTS inbox_activities_pending_idx
+    ON inbox_activities (available_at,received_at,activity_id)
+    WHERE state IN ('accepted','retry','processing');
 
 CREATE TABLE IF NOT EXISTS outbox_activities (
     activity_id TEXT PRIMARY KEY,
