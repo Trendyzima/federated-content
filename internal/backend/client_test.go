@@ -170,4 +170,3 @@ func TestResolveActorRequiresFreshAPIEnvelopeAndMatchingHandle(t *testing.T) {
 		}
 	})
 }
-
