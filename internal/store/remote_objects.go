@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"net/url"
 	"strings"
@@ -85,4 +84,3 @@ func (s *Store) RemoveRemoteAnnounce(ctx context.Context, objectURI, actorURI st
 	return err
 }
 
-var _ = sql.ErrNoRows
