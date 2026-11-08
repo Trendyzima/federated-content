@@ -152,7 +152,6 @@ func TestConcurrentOpenSerializesSchemaMigration(t *testing.T) {
 	}
 }
 
-
 func TestInboxLeaseRetryAndDeadLetterLifecycle(t *testing.T) {
 	s := integrationStore(t)
 	ctx := context.Background()
