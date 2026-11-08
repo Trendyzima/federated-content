@@ -83,6 +83,9 @@ func Load() (Config, error) {
 	if (cfg.BackendInternalURL == "") != (cfg.BackendInternalToken == "") {
 		return Config{}, fmt.Errorf("BACKEND_INTERNAL_URL and BACKEND_INTERNAL_TOKEN must be configured together")
 	}
+	if cfg.InboxWorkerEnabled && cfg.BackendInternalURL == "" {
+		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires private Backend integration")
+	}
 	if cfg.BackendInternalURL != "" {
 		backendURL, backendErr := url.Parse(cfg.BackendInternalURL)
 		if backendErr != nil || backendURL.Host == "" || backendURL.User != nil || backendURL.RawQuery != "" || backendURL.Fragment != "" ||
