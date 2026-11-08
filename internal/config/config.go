@@ -24,6 +24,8 @@ type Config struct {
 	BackendInternalURL    string
 	BackendInternalToken  string
 	DeliveryWorkerEnabled bool
+	OutboxPollerEnabled   bool
+	InboxWorkerEnabled    bool
 }
 
 func Load() (Config, error) {
@@ -45,6 +47,16 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("FEDERATION_DELIVERY_WORKER_ENABLED must be true or false")
 	}
 	cfg.DeliveryWorkerEnabled = deliveryWorkerEnabled
+	outboxPollerEnabled, err := strconv.ParseBool(env("FEDERATION_OUTBOX_POLLER_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("FEDERATION_OUTBOX_POLLER_ENABLED must be true or false")
+	}
+	cfg.OutboxPollerEnabled = outboxPollerEnabled
+	inboxWorkerEnabled, err := strconv.ParseBool(env("FEDERATION_INBOX_WORKER_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED must be true or false")
+	}
+	cfg.InboxWorkerEnabled = inboxWorkerEnabled
 	if cfg.HTTPAddr == "" || cfg.InstanceDomain == "" || cfg.ServiceActorUsername == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR, INSTANCE_DOMAIN and SERVICE_ACTOR_USERNAME must not be empty")
 	}
@@ -62,8 +74,17 @@ func Load() (Config, error) {
 	if !actorUsernamePattern.MatchString(cfg.ServiceActorUsername) || cfg.ServiceActorUsername == "." || cfg.ServiceActorUsername == ".." {
 		return Config{}, fmt.Errorf("SERVICE_ACTOR_USERNAME must be 1-64 lowercase letters, digits, underscores, dots or hyphens and start with a letter, digit or underscore")
 	}
+	if cfg.InboxWorkerEnabled && !cfg.DeliveryWorkerEnabled {
+		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires FEDERATION_DELIVERY_WORKER_ENABLED")
+	}
+	if cfg.InboxWorkerEnabled && cfg.FederationDatabaseURL == "" {
+		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires FEDERATION_DATABASE_URL")
+	}
 	if (cfg.BackendInternalURL == "") != (cfg.BackendInternalToken == "") {
 		return Config{}, fmt.Errorf("BACKEND_INTERNAL_URL and BACKEND_INTERNAL_TOKEN must be configured together")
+	}
+	if cfg.InboxWorkerEnabled && cfg.BackendInternalURL == "" {
+		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires private Backend integration")
 	}
 	if cfg.BackendInternalURL != "" {
 		backendURL, backendErr := url.Parse(cfg.BackendInternalURL)
@@ -71,7 +92,7 @@ func Load() (Config, error) {
 			(backendURL.Scheme != "https" && !(backendURL.Scheme == "http" && (backendURL.Hostname() == "api" || backendURL.Hostname() == "localhost" || backendURL.Hostname() == "127.0.0.1"))) {
 			return Config{}, fmt.Errorf("BACKEND_INTERNAL_URL must be HTTPS (HTTP only for the private api or localhost service)")
 		}
-		if len(cfg.BackendInternalToken) < 32 || strings.ContainsAny(cfg.BackendInternalToken, "\\r\\n") {
+		if len(cfg.BackendInternalToken) < 32 || strings.ContainsAny(cfg.BackendInternalToken, "\r\n") {
 			return Config{}, fmt.Errorf("BACKEND_INTERNAL_TOKEN must contain at least 32 characters")
 		}
 	}

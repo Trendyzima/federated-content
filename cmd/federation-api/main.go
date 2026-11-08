@@ -55,6 +55,19 @@ func main() {
 		}
 	}
 
+	var outboxPoller *worker.OutboxPoller
+	if cfg.OutboxPollerEnabled {
+		if federationStore == nil || backendClient == nil {
+			logger.Error("Backend outbox poller requires Federation storage and private Backend integration")
+			os.Exit(1)
+		}
+		outboxPoller, err = worker.NewOutboxPoller(backendClient, federationStore, cfg.PublicBaseURL, cfg.InstanceDomain, logger)
+		if err != nil {
+			logger.Error("Backend outbox poller initialization failed", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	var deliveryWorker *worker.DeliveryWorker
 	if cfg.DeliveryWorkerEnabled {
 		if federationStore == nil {
@@ -64,6 +77,18 @@ func main() {
 		deliveryWorker, err = worker.NewDeliveryWorker(federationStore, nil, logger)
 		if err != nil {
 			logger.Error("delivery worker initialization failed", "error", err)
+			os.Exit(1)
+		}
+	}
+	var inboxWorker *worker.InboxWorker
+	if cfg.InboxWorkerEnabled {
+		if federationStore == nil || backendClient == nil {
+			logger.Error("signed inbox worker requires Federation storage and private Backend integration")
+			os.Exit(1)
+		}
+		inboxWorker, err = worker.NewInboxWorker(federationStore, backendClient, cfg.PublicBaseURL, logger)
+		if err != nil {
+			logger.Error("signed inbox worker initialization failed", "error", err)
 			os.Exit(1)
 		}
 	}
@@ -80,6 +105,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	var outboxPollerDone chan struct{}
+	if outboxPoller != nil {
+		outboxPollerDone = make(chan struct{})
+		go func() {
+			defer close(outboxPollerDone)
+			outboxPoller.Run(ctx)
+		}()
+		logger.Info("Backend federation outbox poller enabled")
+	}
+
 	var deliveryWorkerDone chan struct{}
 	if deliveryWorker != nil {
 		deliveryWorkerDone = make(chan struct{})
@@ -88,6 +123,15 @@ func main() {
 			deliveryWorker.Run(ctx)
 		}()
 		logger.Info("federation outbound delivery worker enabled")
+	}
+	var inboxWorkerDone chan struct{}
+	if inboxWorker != nil {
+		inboxWorkerDone = make(chan struct{})
+		go func() {
+			defer close(inboxWorkerDone)
+			inboxWorker.Run(ctx)
+		}()
+		logger.Info("signed federation inbox processor enabled")
 	}
 
 	go func() {
@@ -107,6 +151,12 @@ func main() {
 	}
 	if deliveryWorkerDone != nil {
 		<-deliveryWorkerDone
+	}
+	if outboxPollerDone != nil {
+		<-outboxPollerDone
+	}
+	if inboxWorkerDone != nil {
+		<-inboxWorkerDone
 	}
 	logger.Info("federation API stopped")
 }

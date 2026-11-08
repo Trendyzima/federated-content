@@ -39,8 +39,9 @@ jobs:
         run: |
           unformatted="$(gofmt -l $(find . -type f -name '*.go'))"
           if [[ -n "$unformatted" ]]; then
-            echo "The following Go files need gofmt:"
+            echo "The following Go files need gofmt; formatter diff follows:"
             printf '%s\n' "$unformatted"
+            gofmt -d $unformatted
             exit 1
           fi
       - name: Vet

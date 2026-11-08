@@ -32,7 +32,17 @@ CREATE TABLE IF NOT EXISTS inbox_activities (
     processed_at TIMESTAMPTZ,
     last_error TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS inbox_activities_pending_idx ON inbox_activities (received_at) WHERE state = 'accepted';
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0);
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS lease_token TEXT;
+ALTER TABLE inbox_activities ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ;
+ALTER TABLE inbox_activities DROP CONSTRAINT IF EXISTS inbox_activities_state_check;
+ALTER TABLE inbox_activities ADD CONSTRAINT inbox_activities_state_check
+    CHECK (state IN ('accepted','processing','retry','processed','rejected','dead_letter'));
+DROP INDEX IF EXISTS inbox_activities_pending_idx;
+CREATE INDEX IF NOT EXISTS inbox_activities_pending_idx
+    ON inbox_activities (available_at,received_at,activity_id)
+    WHERE state IN ('accepted','retry','processing');
 
 CREATE TABLE IF NOT EXISTS outbox_activities (
     activity_id TEXT PRIMARY KEY,
@@ -64,4 +74,21 @@ CREATE TABLE IF NOT EXISTS remote_followers (
     remote_actor_uri TEXT NOT NULL REFERENCES remote_actors(actor_uri) ON DELETE CASCADE,
     accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (local_user_id, remote_actor_uri)
+);
+
+-- Durable cursor for the Backend -> Federation outbox poller. The cursor is
+-- advanced only after the corresponding activity is durably enqueued locally.
+CREATE TABLE IF NOT EXISTS federation_sync_state (
+    state_key TEXT PRIMARY KEY,
+    cursor_value TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Quarantine permanently invalid Backend events so one poison record cannot pin the cursor.
+CREATE TABLE IF NOT EXISTS federation_outbox_dead_letters (
+ event_id TEXT PRIMARY KEY,
+ event_type TEXT NOT NULL,
+ reason_code TEXT NOT NULL CHECK (reason_code IN ('invalid_event','actor_no_longer_eligible')),
+ payload JSONB NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

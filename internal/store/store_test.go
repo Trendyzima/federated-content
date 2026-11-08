@@ -151,3 +151,104 @@ func TestConcurrentOpenSerializesSchemaMigration(t *testing.T) {
 		t.Errorf("concurrent schema initialization failed: %v", err)
 	}
 }
+
+func TestInboxLeaseRetryAndDeadLetterLifecycle(t *testing.T) {
+	s := integrationStore(t)
+	ctx := context.Background()
+	suffix := time.Now().UTC().Format("150405000000")
+	actorURI := "https://remote.example/users/inbox_" + suffix
+	recipient := "inbox_" + suffix
+
+	ackedID := "https://remote.example/activities/inbox-ack-" + suffix
+	ackedPayload := []byte("{\"id\":\"" + ackedID + "\",\"type\":\"Follow\",\"actor\":\"" + actorURI + "\",\"object\":\"https://federation.testagram.site/users/test\"}")
+	inserted, err := s.StoreInbox(ctx, ackedID, actorURI, recipient, "Follow", ackedPayload)
+	if err != nil || !inserted {
+		t.Fatalf("StoreInbox() inserted=%v err=%v", inserted, err)
+	}
+	inserted, err = s.StoreInbox(ctx, ackedID, actorURI, recipient, "Follow", ackedPayload)
+	if err != nil || inserted {
+		t.Fatalf("identical replay should be idempotent inserted=%v err=%v", inserted, err)
+	}
+	conflicting := []byte("{\"id\":\"" + ackedID + "\",\"type\":\"Like\",\"actor\":\"" + actorURI + "\",\"object\":\"https://federation.testagram.site/users/test\"}")
+	if _, err := s.StoreInbox(ctx, ackedID, actorURI, recipient, "Like", conflicting); err == nil {
+		t.Fatal("same ActivityPub ID with a different type or payload must be rejected")
+	}
+
+	claimed, err := s.ClaimInbox(ctx, 100, 45*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var acked *InboxActivity
+	for i := range claimed {
+		if claimed[i].ActivityID == ackedID {
+			acked = &claimed[i]
+			break
+		}
+	}
+	if acked == nil || acked.Attempts != 1 || acked.LeaseToken == "" {
+		t.Fatalf("inbox item was not leased with attempt 1: %#v", acked)
+	}
+	if err := s.AckInbox(ctx, acked.ActivityID, acked.LeaseToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckInbox(ctx, acked.ActivityID, acked.LeaseToken); err == nil {
+		t.Fatal("stale inbox lease acknowledged twice")
+	}
+
+	retryID := "https://remote.example/activities/inbox-retry-" + suffix
+	retryPayload := []byte("{\"id\":\"" + retryID + "\",\"type\":\"Follow\",\"actor\":\"" + actorURI + "\",\"object\":\"https://federation.testagram.site/users/test\"}")
+	if inserted, err := s.StoreInbox(ctx, retryID, actorURI, recipient, "Follow", retryPayload); err != nil || !inserted {
+		t.Fatalf("retry inbox insert inserted=%v err=%v", inserted, err)
+	}
+	claimed, err = s.ClaimInbox(ctx, 100, 45*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retry *InboxActivity
+	for i := range claimed {
+		if claimed[i].ActivityID == retryID {
+			retry = &claimed[i]
+			break
+		}
+	}
+	if retry == nil {
+		t.Fatal("retry inbox item was not claimed")
+	}
+	if err := s.FailInbox(ctx, retry.ActivityID, retry.LeaseToken, "temporary Backend outage", false); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var attempts int
+	if err := s.db.QueryRowContext(ctx, "SELECT state,attempts FROM inbox_activities WHERE activity_id=$1", retryID).Scan(&state, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if state != "retry" || attempts != 1 {
+		t.Fatalf("transient failure state=%q attempts=%d, want retry/1", state, attempts)
+	}
+	if _, err := s.db.ExecContext(ctx, "UPDATE inbox_activities SET available_at=NOW()-INTERVAL '1 second' WHERE activity_id=$1", retryID); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = s.ClaimInbox(ctx, 100, 45*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry = nil
+	for i := range claimed {
+		if claimed[i].ActivityID == retryID {
+			retry = &claimed[i]
+			break
+		}
+	}
+	if retry == nil || retry.Attempts != 2 {
+		t.Fatalf("retry item was not reclaimed with attempt 2: %#v", retry)
+	}
+	if err := s.FailInbox(ctx, retry.ActivityID, retry.LeaseToken, "unsupported activity type", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRowContext(ctx, "SELECT state FROM inbox_activities WHERE activity_id=$1", retryID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "dead_letter" {
+		t.Fatalf("permanent inbox failure state=%q, want dead_letter", state)
+	}
+}

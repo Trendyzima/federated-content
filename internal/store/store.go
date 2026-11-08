@@ -7,11 +7,13 @@ import (
 	"crypto/x509"
 	"database/sql"
 	_ "embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -194,7 +196,28 @@ func (s *Store) StoreInbox(ctx context.Context, activityID, actorURI, recipientU
 		return false, fmt.Errorf("persist inbox activity: %w", err)
 	}
 	n, err := result.RowsAffected()
-	return n == 1, err
+	if err != nil || n == 1 {
+		return n == 1, err
+	}
+	var storedActor, storedRecipient, storedType string
+	var storedPayload []byte
+	if err := s.db.QueryRowContext(ctx, `SELECT actor_uri,recipient_username,activity_type,payload FROM inbox_activities WHERE activity_id=$1`, activityID).Scan(&storedActor, &storedRecipient, &storedType, &storedPayload); err != nil {
+		return false, fmt.Errorf("verify duplicate inbox activity: %w", err)
+	}
+	if storedActor != actorURI || storedRecipient != recipientUsername || storedType != activityType || !jsonEquivalent(storedPayload, payload) {
+		return false, errors.New("ActivityPub activity ID was replayed with a different actor, recipient, type or payload")
+	}
+	return false, nil
+}
+
+func jsonEquivalent(left, right []byte) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return false
+	}
+	leftJSON, leftErr := json.Marshal(leftValue)
+	rightJSON, rightErr := json.Marshal(rightValue)
+	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
 }
 
 func (s *Store) EnqueueOutbox(ctx context.Context, activityID, actorURI string, payload []byte, inboxes []string) error {
@@ -206,13 +229,24 @@ func (s *Store) EnqueueOutbox(ctx context.Context, activityID, actorURI string, 
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO outbox_activities (activity_id,actor_uri,payload) VALUES ($1,$2,$3::jsonb) ON CONFLICT (activity_id) DO NOTHING`, activityID, actorURI, string(payload)); err != nil {
+	result, err := tx.ExecContext(ctx, `INSERT INTO outbox_activities (activity_id,actor_uri,payload)
+		VALUES ($1,$2,$3::jsonb)
+		ON CONFLICT (activity_id) DO UPDATE SET activity_id=EXCLUDED.activity_id
+		WHERE outbox_activities.actor_uri=EXCLUDED.actor_uri AND outbox_activities.payload=EXCLUDED.payload`,
+		activityID, actorURI, string(payload))
+	if err != nil {
 		return fmt.Errorf("persist outbox activity: %w", err)
+	}
+	if affected, rowsErr := result.RowsAffected(); rowsErr != nil || affected != 1 {
+		return errors.New("activity ID already exists with different actor or payload")
 	}
 	for _, inbox := range inboxes {
 		inbox = strings.TrimSpace(inbox)
 		if inbox == "" {
 			continue
+		}
+		if err := validateStoredInboxURL(inbox); err != nil {
+			return err
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO delivery_jobs (activity_id,inbox_url) VALUES ($1,$2) ON CONFLICT (activity_id,inbox_url) DO NOTHING`, activityID, inbox); err != nil {
 			return fmt.Errorf("enqueue remote delivery: %w", err)
@@ -339,4 +373,54 @@ func (s *Store) MarkInboxProcessed(ctx context.Context, activityID string, proce
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET state='rejected',processed_at=NOW(),last_error=$2 WHERE activity_id=$1`, activityID, reason)
 	return err
+}
+
+// SyncCursor reads a durable integration cursor. A missing row means the
+// consumer has not yet processed any events.
+var syncStateKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+
+// SyncCursor reads a durable integration cursor. A missing row means the consumer has not yet processed any events.
+func (s *Store) SyncCursor(ctx context.Context, key string) (string, error) {
+	if !syncStateKeyPattern.MatchString(key) {
+		return "", errors.New("invalid federation sync-state key")
+	}
+	var cursor string
+	err := s.db.QueryRowContext(ctx, `SELECT cursor_value FROM federation_sync_state WHERE state_key=$1`, key).Scan(&cursor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read federation sync cursor: %w", err)
+	}
+	return cursor, nil
+}
+
+// SaveSyncCursor advances only after the corresponding activity or dead letter is durable.
+func (s *Store) SaveSyncCursor(ctx context.Context, key, cursor string) error {
+	if !syncStateKeyPattern.MatchString(key) || len(cursor) > 128 || strings.ContainsAny(cursor, "\r\n") {
+		return errors.New("invalid federation sync cursor")
+	}
+	if cursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err != nil || len(decoded) == 0 || len(decoded) > 36 {
+			return errors.New("invalid federation sync cursor")
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO federation_sync_state (state_key,cursor_value,updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (state_key) DO UPDATE SET cursor_value=EXCLUDED.cursor_value,updated_at=NOW()`, key, cursor)
+	if err != nil {
+		return fmt.Errorf("save federation sync cursor: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RecordOutboxDeadLetter(ctx context.Context, eventID, eventType, reason string, payload []byte) error {
+	if eventID == "" || len(eventID) > 36 || eventType == "" || len(eventType) > 96 || !json.Valid(payload) || (reason != "invalid_event" && reason != "actor_no_longer_eligible") {
+		return errors.New("invalid Backend outbox dead-letter record")
+	}
+	var accepted string
+	err := s.db.QueryRowContext(ctx, `INSERT INTO federation_outbox_dead_letters (event_id,event_type,reason_code,payload) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (event_id) DO UPDATE SET event_id=EXCLUDED.event_id WHERE federation_outbox_dead_letters.event_type=EXCLUDED.event_type AND federation_outbox_dead_letters.reason_code=EXCLUDED.reason_code AND federation_outbox_dead_letters.payload=EXCLUDED.payload RETURNING event_id`, eventID, eventType, reason, string(payload)).Scan(&accepted)
+	if err != nil {
+		return fmt.Errorf("persist Backend outbox dead letter or detect conflicting replay: %w", err)
+	}
+	return nil
 }
