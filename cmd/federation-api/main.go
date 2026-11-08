@@ -80,6 +80,18 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	var inboxWorker *worker.InboxWorker
+	if cfg.InboxWorkerEnabled {
+		if federationStore == nil || backendClient == nil {
+			logger.Error("signed inbox worker requires Federation storage and private Backend integration")
+			os.Exit(1)
+		}
+		inboxWorker, err = worker.NewInboxWorker(federationStore, backendClient, cfg.PublicBaseURL, logger)
+		if err != nil {
+			logger.Error("signed inbox worker initialization failed", "error", err)
+			os.Exit(1)
+		}
+	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpapi.NewWithRuntime(cfg, logger, federationStore, backendClient),
@@ -112,6 +124,15 @@ func main() {
 		}()
 		logger.Info("federation outbound delivery worker enabled")
 	}
+	var inboxWorkerDone chan struct{}
+	if inboxWorker != nil {
+		inboxWorkerDone = make(chan struct{})
+		go func() {
+			defer close(inboxWorkerDone)
+			inboxWorker.Run(ctx)
+		}()
+		logger.Info("signed federation inbox processor enabled")
+	}
 
 	go func() {
 		logger.Info("federation API starting", "addr", cfg.HTTPAddr, "base_url", cfg.PublicBaseURL)
@@ -133,6 +154,9 @@ func main() {
 	}
 	if outboxPollerDone != nil {
 		<-outboxPollerDone
+	}
+	if inboxWorkerDone != nil {
+		<-inboxWorkerDone
 	}
 	logger.Info("federation API stopped")
 }
