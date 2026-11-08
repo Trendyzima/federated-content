@@ -27,6 +27,12 @@ type fakeInboxStore struct {
 	queuedActor   string
 	queuedPayload []byte
 	queuedInboxes []string
+	objects []store.RemoteObject
+	deletedObjects []string
+	likes []string
+	removedLikes []string
+	announces []string
+	removedAnnounces []string
 }
 
 func (f *fakeInboxStore) ClaimInbox(context.Context, int, time.Duration) ([]store.InboxActivity, error) {
@@ -68,6 +74,31 @@ func (f *fakeInboxStore) EnqueueOutbox(_ context.Context, id, actor string, payl
 	f.queuedActor = actor
 	f.queuedPayload = append([]byte(nil), payload...)
 	f.queuedInboxes = append([]string(nil), inboxes...)
+	return nil
+}
+
+func (f *fakeInboxStore) UpsertRemoteObject(_ context.Context, object store.RemoteObject) error {
+	f.objects = append(f.objects, object)
+	return nil
+}
+func (f *fakeInboxStore) DeleteRemoteObject(_ context.Context, objectURI, actorURI string) error {
+	f.deletedObjects = append(f.deletedObjects, objectURI+":"+actorURI)
+	return nil
+}
+func (f *fakeInboxStore) AddRemoteLike(_ context.Context, objectURI, actorURI string) error {
+	f.likes = append(f.likes, objectURI+":"+actorURI)
+	return nil
+}
+func (f *fakeInboxStore) RemoveRemoteLike(_ context.Context, objectURI, actorURI string) error {
+	f.removedLikes = append(f.removedLikes, objectURI+":"+actorURI)
+	return nil
+}
+func (f *fakeInboxStore) AddRemoteAnnounce(_ context.Context, objectURI, actorURI string) error {
+	f.announces = append(f.announces, objectURI+":"+actorURI)
+	return nil
+}
+func (f *fakeInboxStore) RemoveRemoteAnnounce(_ context.Context, objectURI, actorURI string) error {
+	f.removedAnnounces = append(f.removedAnnounces, objectURI+":"+actorURI)
 	return nil
 }
 
@@ -141,14 +172,14 @@ func TestInboxWorkerProcessesUndoFollow(t *testing.T) {
 
 func TestInboxWorkerQuarantinesUnsupportedActivity(t *testing.T) {
 	actorURI := "https://remote.example/users/bob"
-	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/like-1", "type": "Like", "actor": actorURI, "object": "https://federation.testagram.site/posts/post_123"})
-	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/like-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Like", Payload: payload, LeaseToken: "lease-3"}}}
+	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/flag-1", "type": "Flag", "actor": actorURI, "object": "https://federation.testagram.site/posts/post_123"})
+	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/flag-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Flag", Payload: payload, LeaseToken: "lease-3"}}}
 	backendClient := fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
 	if err != nil || count != 1 {
 		t.Fatalf("ProcessBatch()=(%d,%v), want successful quarantine", count, err)
 	}
-	if len(state.failed) != 1 || !state.failed[0].permanent || !strings.Contains(state.failed[0].reason, "durably quarantined") {
+	if len(state.failed) != 1 || !state.failed[0].permanent || !strings.Contains(state.failed[0].reason, "unsupported ActivityPub activity type") {
 		t.Fatalf("unsupported activity was not dead-lettered: %#v", state.failed)
 	}
 	if len(state.acked) != 0 {
@@ -168,4 +199,35 @@ func TestInboxWorkerRetriesBackendOutage(t *testing.T) {
 	if len(state.failed) != 1 || state.failed[0].permanent {
 		t.Fatalf("Backend outage should be retryable: %#v", state.failed)
 	}
+}
+
+
+func TestInboxWorkerPersistsRemoteCreateAndLike(t *testing.T) {
+	actorURI := "https://remote.example/users/bob"
+	objectURI := "https://remote.example/notes/1"
+	object := map[string]any{"id":objectURI,"type":"Note","attributedTo":actorURI,"content":"Hello federation","published":time.Now().UTC().Format(time.RFC3339),"to":[]string{"https://www.w3.org/ns/activitystreams#Public"}}
+	payload, _ := json.Marshal(map[string]any{"id":"https://remote.example/activities/create-1","type":"Create","actor":actorURI,"object":object})
+	state := &fakeInboxStore{items:[]store.InboxActivity{{ActivityID:"https://remote.example/activities/create-1",ActorURI:actorURI,RecipientUsername:"alice",ActivityType:"Create",Payload:payload,LeaseToken:"lease-create"}}}
+	backendClient := fakeInboxBackend{profile:backend.ActorProfile{UserID:"user_123",Handle:"alice",FederationEnabled:true}}
+	if count, err := testInboxWorker(state,backendClient).ProcessBatch(context.Background()); err != nil || count != 1 { t.Fatalf("Create ProcessBatch()=(%d,%v)",count,err) }
+	if len(state.objects)!=1 || state.objects[0].ObjectURI!=objectURI || state.objects[0].Visibility!="public" { t.Fatalf("remote Create not projected: %#v",state.objects) }
+	likePayload,_:=json.Marshal(map[string]any{"id":"https://remote.example/activities/like-1","type":"Like","actor":actorURI,"object":objectURI})
+	state.items=[]store.InboxActivity{{ActivityID:"https://remote.example/activities/like-1",ActorURI:actorURI,RecipientUsername:"alice",ActivityType:"Like",Payload:likePayload,LeaseToken:"lease-like"}}
+	if count, err := testInboxWorker(state,backendClient).ProcessBatch(context.Background()); err != nil || count != 1 { t.Fatalf("Like ProcessBatch()=(%d,%v)",count,err) }
+	if len(state.likes)!=1 || state.likes[0]!=objectURI+":"+actorURI { t.Fatalf("remote Like not persisted: %#v",state.likes) }
+}
+
+func TestInboxWorkerAppliesUndoLikeAndDelete(t *testing.T) {
+	actorURI := "https://remote.example/users/bob"
+	objectURI := "https://remote.example/notes/2"
+	original:=map[string]any{"id":"https://remote.example/activities/like-2","type":"Like","actor":actorURI,"object":objectURI}
+	undo,_:=json.Marshal(map[string]any{"id":"https://remote.example/activities/undo-like-2","type":"Undo","actor":actorURI,"object":original})
+	state:=&fakeInboxStore{items:[]store.InboxActivity{{ActivityID:"https://remote.example/activities/undo-like-2",ActorURI:actorURI,RecipientUsername:"alice",ActivityType:"Undo",Payload:undo,LeaseToken:"lease-undo"}}}
+	backendClient:=fakeInboxBackend{profile:backend.ActorProfile{UserID:"user_123",Handle:"alice",FederationEnabled:true}}
+	if count,err:=testInboxWorker(state,backendClient).ProcessBatch(context.Background());err!=nil||count!=1{t.Fatalf("Undo Like ProcessBatch()=(%d,%v)",count,err)}
+	if len(state.removedLikes)!=1||state.removedLikes[0]!=objectURI+":"+actorURI{t.Fatalf("Undo Like not applied: %#v",state.removedLikes)}
+	deletePayload,_:=json.Marshal(map[string]any{"id":"https://remote.example/activities/delete-2","type":"Delete","actor":actorURI,"object":objectURI})
+	state.items=[]store.InboxActivity{{ActivityID:"https://remote.example/activities/delete-2",ActorURI:actorURI,RecipientUsername:"alice",ActivityType:"Delete",Payload:deletePayload,LeaseToken:"lease-delete"}}
+	if count,err:=testInboxWorker(state,backendClient).ProcessBatch(context.Background());err!=nil||count!=1{t.Fatalf("Delete ProcessBatch()=(%d,%v)",count,err)}
+	if len(state.deletedObjects)!=1||state.deletedObjects[0]!=objectURI+":"+actorURI{t.Fatalf("Delete not applied: %#v",state.deletedObjects)}
 }
