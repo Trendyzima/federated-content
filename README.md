@@ -41,7 +41,7 @@ This branch implements the durable ActivityPub identity and signed-ingress found
 6. Add end-to-end tests across Backend, Federation and Data Centre, plus Mastodon/GoToSocial interoperability and load tests.
 7. Finish public domain routing, TLS, observability, operational recovery and production rollout controls.
 
-The database stores accepted inbox activities and delivery jobs. The outbound delivery worker is implemented but deliberately disabled by default; no complete event/follower producer currently populates the queue. The inbox processor and Backend outbox poller are still missing. Do not enable the worker in production or public ActivityPub routing until the producer, inbox processing, fan-out and end-to-end tests are complete.
+The database stores accepted inbox activities and delivery jobs. The signed delivery worker and Backend outbox poller are implemented but deliberately disabled by default. The poller consumes eligible public-post events, rechecks current Backend consent, durably creates ActivityPub activities and quarantines permanent poison events before advancing its cursor. The private Backend activity-ingress endpoint is an additional authenticated idempotent producer. The inbound inbox processor that applies verified Follow/Undo and supported post interactions to Backend-owned state is still missing. Do not enable either worker in production or public ActivityPub routing until inbox projection, follower fan-out limits, observability and end-to-end interoperability tests are complete.
 
 ## Service contract
 
