@@ -52,7 +52,9 @@ func (f *fakeOutboxStore) GetState(context.Context, string) (string, error) {
 }
 
 func (f *fakeOutboxStore) SetState(_ context.Context, _ string, value string) error {
-	if f.stateErr != nil { return f.stateErr }
+	if f.stateErr != nil {
+		return f.stateErr
+	}
 	f.cursor = value
 	return nil
 }
@@ -68,7 +70,9 @@ func (f *fakeOutboxStore) FollowerInboxes(context.Context, string) ([]string, er
 }
 
 func (f *fakeOutboxStore) EnqueueOutbox(_ context.Context, id, actor string, payload []byte, inboxes []string) error {
-	if f.enqueueErr != nil { return f.enqueueErr }
+	if f.enqueueErr != nil {
+		return f.enqueueErr
+	}
 	f.queued = append(f.queued, queuedActivity{id:id, actor:actor, payload:append([]byte(nil),payload...), inboxes:append([]string(nil),inboxes...)})
 	return nil
 }
@@ -79,7 +83,9 @@ func newOutboxFixture(t *testing.T) (*OutboxPoller, *fakeOutboxBackend, *fakeOut
 		ID:"p_123", AuthorID:"user_123", ActorHandle:"alice", DisplayName:"Alice",
 		Content:"Hello <world>\nfrom Testagram", Visibility:"public", CreatedAt:"2026-11-07T20:00:00Z",
 	})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	backendFake := &fakeOutboxBackend{
 		page: backend.OutboxPage{Events:[]backend.OutboxEvent{{
 			ID:"evt_12345678901234567890123456789012", EventType:"testagram.post.published",
@@ -90,24 +96,38 @@ func newOutboxFixture(t *testing.T) (*OutboxPoller, *fakeOutboxBackend, *fakeOut
 	storeFake := &fakeOutboxStore{inboxes:[]string{"https://remote.example/inbox"}}
 	logger := slog.New(slog.NewTextHandler(io.Discard,nil))
 	poller, err := NewOutboxPoller(storeFake, backendFake, "https://federation.testagram.site", logger)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	return poller, backendFake, storeFake
 }
 
 func TestOutboxPollerBuildsAndFansOutActivityPubCreate(t *testing.T) {
 	poller, backendFake, storeFake := newOutboxFixture(t)
 	hasMore, err := poller.pollBatch(context.Background())
-	if err != nil { t.Fatal(err) }
-	if hasMore { t.Fatal("single final outbox page unexpectedly reports more events") }
-	if backendFake.seenCursor != "" { t.Fatalf("initial cursor=%q", backendFake.seenCursor) }
-	if storeFake.cursor != "Y3Vyc29yLW5leHQ" { t.Fatalf("cursor=%q", storeFake.cursor) }
-	if len(storeFake.queued) != 1 { t.Fatalf("queued activities=%d, want 1", len(storeFake.queued)) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasMore {
+		t.Fatal("single final outbox page unexpectedly reports more events")
+	}
+	if backendFake.seenCursor != "" {
+		t.Fatalf("initial cursor=%q", backendFake.seenCursor)
+	}
+	if storeFake.cursor != "Y3Vyc29yLW5leHQ" {
+		t.Fatalf("cursor=%q", storeFake.cursor)
+	}
+	if len(storeFake.queued) != 1 {
+		t.Fatalf("queued activities=%d, want 1", len(storeFake.queued))
+	}
 	queued := storeFake.queued[0]
 	if queued.actor != "https://federation.testagram.site/users/alice" || len(queued.inboxes) != 1 || queued.inboxes[0] != "https://remote.example/inbox" {
 		t.Fatalf("unexpected delivery fan-out: %+v", queued)
 	}
 	var activity map[string]any
-	if err := json.Unmarshal(queued.payload, &activity); err != nil { t.Fatalf("decode ActivityPub Create: %v", err) }
+	if err := json.Unmarshal(queued.payload, &activity); err != nil {
+		t.Fatalf("decode ActivityPub Create: %v", err)
+	}
 	if activity["type"] != "Create" || activity["actor"] != queued.actor {
 		t.Fatalf("unexpected ActivityPub activity: %+v", activity)
 	}
@@ -124,30 +144,48 @@ func TestOutboxPollerBuildsAndFansOutActivityPubCreate(t *testing.T) {
 func TestOutboxPollerSkipsRevokedFederationConsentAndAdvancesCursor(t *testing.T) {
 	poller, backendFake, storeFake := newOutboxFixture(t)
 	backendFake.resolveErr = backend.ErrActorNotFound
-	if _, err := poller.pollBatch(context.Background()); err != nil { t.Fatal(err) }
-	if len(storeFake.queued) != 0 { t.Fatalf("revoked actor event was delivered: %+v", storeFake.queued) }
-	if storeFake.cursor != "Y3Vyc29yLW5leHQ" { t.Fatalf("cursor did not advance past revoked actor: %q", storeFake.cursor) }
+	if _, err := poller.pollBatch(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(storeFake.queued) != 0 {
+		t.Fatalf("revoked actor event was delivered: %+v", storeFake.queued)
+	}
+	if storeFake.cursor != "Y3Vyc29yLW5leHQ" {
+		t.Fatalf("cursor did not advance past revoked actor: %q", storeFake.cursor)
+	}
 }
 
 func TestOutboxPollerDoesNotAdvanceCursorWhenFanoutPersistenceFails(t *testing.T) {
 	poller, _, storeFake := newOutboxFixture(t)
 	storeFake.enqueueErr = errors.New("database unavailable")
-	if _, err := poller.pollBatch(context.Background()); err == nil { t.Fatal("expected enqueue failure") }
-	if storeFake.cursor != "" { t.Fatalf("cursor advanced after failed enqueue: %q", storeFake.cursor) }
+	if _, err := poller.pollBatch(context.Background()); err == nil {
+		t.Fatal("expected enqueue failure")
+	}
+	if storeFake.cursor != "" {
+		t.Fatalf("cursor advanced after failed enqueue: %q", storeFake.cursor)
+	}
 }
 
 func TestOutboxPollerSkipsSensitiveAndNonPublicEvents(t *testing.T) {
-	for _, tc := range []struct{name string; visibility string; sensitive bool}{
+	for _, tc := range []struct {
+		name string
+		visibility string
+		sensitive bool
+	}{
 		{"sensitive", "public", true},
 		{"followers-only", "followers", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			poller, backendFake, storeFake := newOutboxFixture(t)
 			var payload publishedPostPayload
-			if err := json.Unmarshal(backendFake.page.Events[0].Payload, &payload); err != nil { t.Fatal(err) }
+			if err := json.Unmarshal(backendFake.page.Events[0].Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
 			payload.Visibility, payload.Sensitive = tc.visibility, tc.sensitive
 			backendFake.page.Events[0].Payload, _ = json.Marshal(payload)
-			if _, err := poller.pollBatch(context.Background()); err != nil { t.Fatal(err) }
+			if _, err := poller.pollBatch(context.Background()); err != nil {
+				t.Fatal(err)
+			}
 			if backendFake.resolveErr != nil || storeFake.ensureCalls != 0 || len(storeFake.queued) != 0 {
 				t.Fatal("ineligible post was passed to actor lookup or delivery")
 			}
