@@ -154,7 +154,6 @@ func TestConcurrentOpenSerializesSchemaMigration(t *testing.T) {
 	}
 }
 
-
 func TestRemoteFollowerFanoutAndActivityPubObjectDereference(t *testing.T) {
 	s := integrationStore(t)
 	ctx := context.Background()
