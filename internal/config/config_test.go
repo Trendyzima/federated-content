@@ -14,6 +14,10 @@ func setValidEnvironment(t *testing.T) {
 	t.Setenv("SERVICE_ACTOR_USERNAME", "Testagram")
 	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
 	t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "")
+	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "")
+	t.Setenv("FEDERATION_DATABASE_URL", "")
+	t.Setenv("BACKEND_INTERNAL_URL", "")
+	t.Setenv("BACKEND_INTERNAL_TOKEN", "")
 }
 
 func TestLoadDefaultsAndNormalizesActorName(t *testing.T) {
@@ -153,4 +157,53 @@ func TestOutboxPollerRejectsMalformedEnableFlag(t *testing.T) {
 	if _, err := Load(); err == nil {
 		t.Fatal("expected malformed outbox poller flag to be rejected")
 	}
+}
+
+func TestInboxWorkerIsOptIn(t *testing.T) {
+	setValidEnvironment(t)
+	cfg, err := Load()
+	if err != nil { t.Fatal(err) }
+	if cfg.InboxWorkerEnabled { t.Fatal("signed inbox worker must remain disabled by default") }
+}
+
+func TestInboxWorkerRequiresDeliveryAndStorage(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "true")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "FEDERATION_DELIVERY_WORKER_ENABLED") {
+		t.Fatalf("expected delivery worker dependency error, got %v", err)
+	}
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "true")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "FEDERATION_DATABASE_URL") {
+		t.Fatalf("expected Federation database dependency error, got %v", err)
+	}
+}
+
+func TestInboxWorkerRequiresPrivateBackendIntegration(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "true")
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "true")
+	t.Setenv("FEDERATION_DATABASE_URL", "postgresql://test:test@localhost/federation?sslmode=disable")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "private Backend integration") {
+		t.Fatalf("expected private Backend dependency error, got %v", err)
+	}
+}
+
+func TestInboxWorkerRejectsMalformedEnableFlag(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected malformed inbox worker flag to be rejected")
+	}
+}
+
+func TestInboxWorkerAcceptsCompletePrivateRuntimeConfig(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "true")
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "true")
+	t.Setenv("FEDERATION_DATABASE_URL", "postgresql://test:test@localhost/federation?sslmode=disable")
+	t.Setenv("BACKEND_INTERNAL_URL", "https://api.testagram.site")
+	t.Setenv("BACKEND_INTERNAL_TOKEN", "ci-private-backend-token-that-is-long-enough")
+	cfg, err := Load()
+	if err != nil { t.Fatal(err) }
+	if !cfg.InboxWorkerEnabled || !cfg.DeliveryWorkerEnabled { t.Fatal("complete inbox runtime config was not enabled") }
 }
