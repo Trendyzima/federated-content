@@ -196,7 +196,18 @@ func (s *Store) StoreInbox(ctx context.Context, activityID, actorURI, recipientU
 		return false, fmt.Errorf("persist inbox activity: %w", err)
 	}
 	n, err := result.RowsAffected()
-	return n == 1, err
+	if err != nil || n == 1 {
+		return n == 1, err
+	}
+	var storedActor, storedRecipient, storedType string
+	var storedPayload []byte
+	if err := s.db.QueryRowContext(ctx, `SELECT actor_uri,recipient_username,activity_type,payload FROM inbox_activities WHERE activity_id=$1`, activityID).Scan(&storedActor,&storedRecipient,&storedType,&storedPayload); err != nil {
+		return false, fmt.Errorf("verify duplicate inbox activity: %w", err)
+	}
+	if storedActor != actorURI || storedRecipient != recipientUsername || storedType != activityType || string(storedPayload) != string(payload) {
+		return false, errors.New("ActivityPub activity ID was replayed with a different actor, recipient, type or payload")
+	}
+	return false, nil
 }
 
 func (s *Store) EnqueueOutbox(ctx context.Context, activityID, actorURI string, payload []byte, inboxes []string) error {
