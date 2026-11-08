@@ -92,3 +92,40 @@ CREATE TABLE IF NOT EXISTS federation_outbox_dead_letters (
  payload JSONB NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
+-- Durable remote object projections produced only by verified inbox workers.
+CREATE TABLE IF NOT EXISTS remote_objects (
+    object_uri TEXT PRIMARY KEY,
+    actor_uri TEXT NOT NULL REFERENCES remote_actors(actor_uri) ON DELETE CASCADE,
+    object_type TEXT NOT NULL CHECK (object_type IN ('Note','Article')),
+    content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 20000),
+    published_at TIMESTAMPTZ,
+    visibility TEXT NOT NULL CHECK (visibility IN ('public','unlisted','followers','direct')),
+    payload JSONB NOT NULL CHECK (jsonb_typeof(payload)='object'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS remote_objects_public_timeline_idx
+    ON remote_objects(published_at DESC,object_uri DESC)
+    WHERE deleted_at IS NULL AND visibility='public';
+CREATE INDEX IF NOT EXISTS remote_objects_actor_timeline_idx
+    ON remote_objects(actor_uri,published_at DESC,object_uri DESC)
+    WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS remote_likes (
+    object_uri TEXT NOT NULL,
+    actor_uri TEXT NOT NULL REFERENCES remote_actors(actor_uri) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(object_uri,actor_uri)
+);
+CREATE INDEX IF NOT EXISTS remote_likes_actor_idx ON remote_likes(actor_uri,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS remote_announces (
+    object_uri TEXT NOT NULL,
+    actor_uri TEXT NOT NULL REFERENCES remote_actors(actor_uri) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(object_uri,actor_uri)
+);
+CREATE INDEX IF NOT EXISTS remote_announces_actor_idx ON remote_announces(actor_uri,created_at DESC);
