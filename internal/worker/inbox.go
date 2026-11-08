@@ -142,16 +142,23 @@ func (w *InboxWorker) process(ctx context.Context,item store.InboxActivity) erro
 		}
 		return nil
 	case "Undo":
+		var originalID string
 		var original followEnvelope
-		if err := json.Unmarshal(activity.Object,&original); err != nil || original.Type != "Follow" || original.Actor != item.ActorURI {
-			return permanentInbox("Undo activity does not contain the matching original Follow")
+		if json.Unmarshal(activity.Object, &originalID) == nil {
+			if !isHTTPSActivityID(originalID) {
+				return permanentInbox("Undo activity references an invalid Follow ID")
+			}
+		} else {
+			if err := json.Unmarshal(activity.Object, &original); err != nil || original.Type != "Follow" || original.Actor != item.ActorURI {
+				return permanentInbox("Undo activity does not contain the matching original Follow")
+			}
+			target, ok := activityObjectURI(original.Object)
+			if !ok || target != localActor.ActorURI || original.ID == "" || !isHTTPSActivityID(original.ID) {
+				return permanentInbox("Undo activity references an invalid Follow")
+			}
 		}
-		target,ok := activityObjectURI(original.Object)
-		if !ok || target != localActor.ActorURI || original.ID == "" || !isHTTPSActivityID(original.ID) {
-			return permanentInbox("Undo activity references an invalid Follow")
-		}
-		if err := w.store.RemoveRemoteFollower(ctx,profile.UserID,item.ActorURI); err != nil {
-			return fmt.Errorf("remove remote follower: %w",err)
+		if err := w.store.RemoveRemoteFollower(ctx, profile.UserID, item.ActorURI); err != nil {
+			return fmt.Errorf("remove remote follower: %w", err)
 		}
 		return nil
 	default:
