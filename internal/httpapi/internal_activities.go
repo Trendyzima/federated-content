@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
 )
 
 const maxInternalActivityBody = 1 << 20
@@ -109,9 +108,9 @@ func (s *Server) enqueueAuthorizedActivity(w http.ResponseWriter, r *http.Reques
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"ok": true,
-		"data": map[string]any{"activity_id": input.ActivityID, "recipient_count": len(inboxes), "accepted": true},
-		"error": nil,
+		"ok":         true,
+		"data":       map[string]any{"activity_id": input.ActivityID, "recipient_count": len(inboxes), "accepted": true},
+		"error":      nil,
 		"request_id": internalRequestID(r),
 	})
 }
@@ -150,7 +149,6 @@ func validAuthorizedActivity(activity activityEnvelope, expectedID string) bool 
 	}
 	return true
 }
-
 
 var internalRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
