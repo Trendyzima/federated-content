@@ -204,10 +204,20 @@ func (s *Store) StoreInbox(ctx context.Context, activityID, actorURI, recipientU
 	if err := s.db.QueryRowContext(ctx, `SELECT actor_uri,recipient_username,activity_type,payload FROM inbox_activities WHERE activity_id=$1`, activityID).Scan(&storedActor, &storedRecipient, &storedType, &storedPayload); err != nil {
 		return false, fmt.Errorf("verify duplicate inbox activity: %w", err)
 	}
-	if storedActor != actorURI || storedRecipient != recipientUsername || storedType != activityType || string(storedPayload) != string(payload) {
+	if storedActor != actorURI || storedRecipient != recipientUsername || storedType != activityType || !jsonEquivalent(storedPayload, payload) {
 		return false, errors.New("ActivityPub activity ID was replayed with a different actor, recipient, type or payload")
 	}
 	return false, nil
+}
+
+func jsonEquivalent(left, right []byte) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return false
+	}
+	leftJSON, leftErr := json.Marshal(leftValue)
+	rightJSON, rightErr := json.Marshal(rightValue)
+	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
 }
 
 func (s *Store) EnqueueOutbox(ctx context.Context, activityID, actorURI string, payload []byte, inboxes []string) error {
