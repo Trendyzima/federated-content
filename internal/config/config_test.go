@@ -162,8 +162,12 @@ func TestOutboxPollerRejectsMalformedEnableFlag(t *testing.T) {
 func TestInboxWorkerIsOptIn(t *testing.T) {
 	setValidEnvironment(t)
 	cfg, err := Load()
-	if err != nil { t.Fatal(err) }
-	if cfg.InboxWorkerEnabled { t.Fatal("signed inbox worker must remain disabled by default") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.InboxWorkerEnabled {
+		t.Fatal("signed inbox worker must remain disabled by default")
+	}
 }
 
 func TestInboxWorkerRequiresDeliveryAndStorage(t *testing.T) {
@@ -204,6 +208,10 @@ func TestInboxWorkerAcceptsCompletePrivateRuntimeConfig(t *testing.T) {
 	t.Setenv("BACKEND_INTERNAL_URL", "https://api.testagram.site")
 	t.Setenv("BACKEND_INTERNAL_TOKEN", "ci-private-backend-token-that-is-long-enough")
 	cfg, err := Load()
-	if err != nil { t.Fatal(err) }
-	if !cfg.InboxWorkerEnabled || !cfg.DeliveryWorkerEnabled { t.Fatal("complete inbox runtime config was not enabled") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.InboxWorkerEnabled || !cfg.DeliveryWorkerEnabled {
+		t.Fatal("complete inbox runtime config was not enabled")
+	}
 }
