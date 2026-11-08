@@ -35,12 +35,12 @@ type OutboxStore interface {
 }
 
 type OutboxPoller struct {
-	store       OutboxStore
-	backend     OutboxBackend
-	publicBase  string
-	logger      *slog.Logger
-	interval    time.Duration
-	batchSize   int
+	store      OutboxStore
+	backend    OutboxBackend
+	publicBase string
+	logger     *slog.Logger
+	interval   time.Duration
+	batchSize  int
 }
 
 type publishedPostPayload struct {
