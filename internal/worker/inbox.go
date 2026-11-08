@@ -134,6 +134,7 @@ func (w *InboxWorker) process(ctx context.Context,item store.InboxActivity) erro
 			"id":acceptID,
 			"type":"Accept",
 			"actor":localActor.ActorURI,
+			"to":[]string{item.ActorURI},
 			"object":json.RawMessage(item.Payload),
 		})
 		if err != nil { return permanentInbox("could not encode Accept activity") }
@@ -176,7 +177,7 @@ func activityObjectURI(raw json.RawMessage) (string,bool) {
 
 func isHTTPSActivityID(raw string) bool {
 	u,err := url.Parse(strings.TrimSpace(raw))
-	return err==nil && u.Scheme=="https" && u.Host!="" && u.User==nil && u.Fragment==""
+	return err==nil && u.Scheme=="https" && u.Host!="" && u.User==nil && u.RawQuery=="" && u.Fragment==""
 }
 
 func deterministicAcceptID(baseURL,followID,actorURI string) string {
