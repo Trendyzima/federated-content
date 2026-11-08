@@ -22,28 +22,7 @@ import (
 const backendOutboxCursorKey = "backend_outbox_v1"
 const backendOutboxBatchSize = 50
 
-var safeActivityObjectID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}package worker
-
-import (
-	"context"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"html"
-	"io"
-	"regexp"
-	"log/slog"
-	"net/url"
-	"strings"
-	"time"
-	"unicode/utf8"
-
-	"github.com/Trendyzima/federated-content/internal/backend"
-	"github.com/Trendyzima/federated-content/internal/store"
-)
-
-)
+var safeActivityObjectID = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 type OutboxSource interface {
 	ListOutbox(context.Context, string, int) (backend.OutboxPage, error)
