@@ -201,7 +201,7 @@ func (s *Store) StoreInbox(ctx context.Context, activityID, actorURI, recipientU
 	}
 	var storedActor, storedRecipient, storedType string
 	var storedPayload []byte
-	if err := s.db.QueryRowContext(ctx, `SELECT actor_uri,recipient_username,activity_type,payload FROM inbox_activities WHERE activity_id=$1`, activityID).Scan(&storedActor,&storedRecipient,&storedType,&storedPayload); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT actor_uri,recipient_username,activity_type,payload FROM inbox_activities WHERE activity_id=$1`, activityID).Scan(&storedActor, &storedRecipient, &storedType, &storedPayload); err != nil {
 		return false, fmt.Errorf("verify duplicate inbox activity: %w", err)
 	}
 	if storedActor != actorURI || storedRecipient != recipientUsername || storedType != activityType || string(storedPayload) != string(payload) {
