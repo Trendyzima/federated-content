@@ -354,7 +354,6 @@ func (s *Store) MarkInboxProcessed(ctx context.Context, activityID string, proce
 	return err
 }
 
-
 // SyncCursor reads a durable integration cursor. A missing row means the
 // consumer has not yet processed any events.
 var syncStateKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
