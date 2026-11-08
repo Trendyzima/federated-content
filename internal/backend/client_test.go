@@ -117,3 +117,56 @@ func TestListOutboxRejectsMalformedCursorAndEvents(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveActorRequiresFreshAPIEnvelopeAndMatchingHandle(t *testing.T) {
+	const token = "test-federation-service-token-which-is-long-enough"
+	t.Run("valid envelope", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/internal/v1/federation/actors/alice" {
+				t.Errorf("actor lookup path=%q", r.URL.Path)
+			}
+			if r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("X-Testagram-API-Version") != "1" || r.Header.Get("X-Request-ID") == "" {
+				t.Errorf("private actor request headers are incomplete")
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"data":{"user_id":"user_123","handle":"alice","display_name":"Alice","summary":"Hello","federation_enabled":true},"error":null}`))
+		}))
+		defer server.Close()
+		client, err := New(server.URL, token, server.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		actor, err := client.ResolveActor(context.Background(), "Alice")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actor.UserID != "user_123" || actor.Handle != "alice" || !actor.FederationEnabled {
+			t.Fatalf("unexpected actor profile: %+v", actor)
+		}
+	})
+	t.Run("bare profile is rejected", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"user_id":"user_123","handle":"alice","federation_enabled":true}`))
+		}))
+		defer server.Close()
+		client, err := New(server.URL, token, server.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.ResolveActor(context.Background(), "alice"); err == nil {
+			t.Fatal("bare profile response must not satisfy the Fresh API envelope contract")
+		}
+	})
+	t.Run("mismatched handle is rejected", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"ok":true,"data":{"user_id":"user_123","handle":"mallory","federation_enabled":true},"error":null}`))
+		}))
+		defer server.Close()
+		client, err := New(server.URL, token, server.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.ResolveActor(context.Background(), "alice"); err == nil {
+			t.Fatal("actor handle mismatch must be rejected")
+		}
+	})
+}
