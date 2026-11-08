@@ -43,15 +43,14 @@ type Actor struct {
 	Summary       string
 }
 
-
 type InboxActivity struct {
-	ActivityID       string
-	ActorURI         string
+	ActivityID        string
+	ActorURI          string
 	RecipientUsername string
-	ActivityType     string
-	Payload          json.RawMessage
-	Attempts         int
-	LeaseToken       string
+	ActivityType      string
+	Payload           json.RawMessage
+	Attempts          int
+	LeaseToken        string
 }
 
 type Delivery struct {
@@ -116,8 +115,14 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func (s *Store) Close() error                   { return s.db.Close() }
-func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+func (s *Store) Close() error                   {
+
+	return s.db.Close()
+
+}
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
 
 func (s *Store) EnsureActor(ctx context.Context, userID, username, actorURI, displayName, summary string) (Actor, error) {
 	userID, username, actorURI = strings.TrimSpace(userID), strings.TrimSpace(username), strings.TrimSpace(actorURI)
@@ -353,7 +358,6 @@ func (s *Store) MarkInboxProcessed(ctx context.Context, activityID string, proce
 	return err
 }
 
-
 func (s *Store) GetState(ctx context.Context, key string) (string, error) {
 	key = strings.TrimSpace(key)
 	if key == "" || len(key) > 128 {
@@ -405,8 +409,6 @@ func (s *Store) FollowerInboxes(ctx context.Context, localUserID string) ([]stri
 	}
 	return inboxes, nil
 }
-
-
 
 func (s *Store) AddRemoteFollower(ctx context.Context, localUserID, remoteActorURI string) error {
 	localUserID, remoteActorURI = strings.TrimSpace(localUserID), strings.TrimSpace(remoteActorURI)
@@ -489,8 +491,6 @@ func (s *Store) GetOutboxObject(ctx context.Context, actorURI, objectURI string)
 		WHERE actor_uri=$1 AND payload->'object'->>'id'=$2`, actorURI, objectURI).Scan(&object)
 	return json.RawMessage(object), err
 }
-
-
 
 func (s *Store) ClaimInbox(ctx context.Context, limit int, lease time.Duration) ([]InboxActivity, error) {
 	if limit < 1 || limit > 100 || lease < 15*time.Second || lease > 5*time.Minute {
@@ -580,4 +580,3 @@ func (s *Store) FailInbox(ctx context.Context, activityID, token, reason string,
 	}
 	return err
 }
-
