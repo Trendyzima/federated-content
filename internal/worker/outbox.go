@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"regexp"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -19,6 +21,29 @@ import (
 
 const backendOutboxCursorKey = "backend_outbox_v1"
 const backendOutboxBatchSize = 50
+
+var safeActivityObjectID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}package worker
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html"
+	"io"
+	"regexp"
+	"log/slog"
+	"net/url"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/Trendyzima/federated-content/internal/backend"
+	"github.com/Trendyzima/federated-content/internal/store"
+)
+
+)
 
 type OutboxSource interface {
 	ListOutbox(context.Context, string, int) (backend.OutboxPage, error)
@@ -144,7 +169,7 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 		return permanentOutbox("invalid_event", "Backend post event payload must contain exactly one JSON object")
 	}
 	if payload.ID != event.ObjectID || payload.AuthorID != event.ActorID || payload.Visibility != "public" || payload.Sensitive ||
-		payload.ActorHandle == "" || len(payload.ActorHandle) > 30 || !utf8.ValidString(payload.Content) ||
+		payload.ActorHandle == "" || len(payload.ActorHandle) > 30 || !safeActivityObjectID.MatchString(payload.ID) || !safeActivityObjectID.MatchString(event.ObjectID) || !utf8.ValidString(payload.Content) ||
 		strings.TrimSpace(payload.Content) == "" || utf8.RuneCountInString(payload.Content) > 5000 {
 		return permanentOutbox("invalid_event", "Backend post event failed federation eligibility checks")
 	}
@@ -189,7 +214,7 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 			"id":           objectURL,
 			"type":         "Note",
 			"attributedTo": actor.ActorURI,
-			"content":      payload.Content,
+			"content":      strings.ReplaceAll(html.EscapeString(payload.Content), "\n", "<br>"),
 			"published":    event.CreatedAt,
 			"to":           []string{"https://www.w3.org/ns/activitystreams#Public"},
 			"cc":           []string{actor.ActorURI + "/followers"},
