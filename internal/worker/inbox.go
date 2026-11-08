@@ -87,6 +87,9 @@ func (w *InboxWorker) ProcessBatch(ctx context.Context) (int, error) {
 			isPermanent := errors.As(err, &permanent)
 			if failErr := w.store.FailInbox(ctx, item.ActivityID, item.LeaseToken, err.Error(), isPermanent); failErr != nil {
 				err = fmt.Errorf("%v; persist inbox retry/dead-letter: %w", err, failErr)
+			} else if isPermanent {
+				w.logger.Warn("federation inbox activity moved to dead letter", "activity_id", item.ActivityID, "reason", err.Error())
+				err = nil
 			}
 		}
 		if err != nil && firstErr == nil {
