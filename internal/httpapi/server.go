@@ -370,7 +370,6 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	})
 }
 
-
 func (s *Server) followers(w http.ResponseWriter, r *http.Request) {
 	username := r.PathValue("username")
 	if !acceptsActivityJSON(r.Header.Get("Accept")) {
@@ -470,4 +469,3 @@ func (s *Server) object(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeActivityJSON(w, http.StatusOK, object)
 }
-
