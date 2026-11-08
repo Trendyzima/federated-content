@@ -25,6 +25,12 @@ type InboxStore interface {
 	RemoveRemoteFollower(context.Context, string, string) error
 	RemoteActorInbox(context.Context, string) (string, error)
 	EnqueueOutbox(context.Context, string, string, []byte, []string) error
+	UpsertRemoteObject(context.Context, store.RemoteObject) error
+	DeleteRemoteObject(context.Context, string, string) error
+	AddRemoteLike(context.Context, string, string) error
+	RemoveRemoteLike(context.Context, string, string) error
+	AddRemoteAnnounce(context.Context, string, string) error
+	RemoveRemoteAnnounce(context.Context, string, string) error
 }
 
 type InboxBackend interface {
@@ -154,42 +160,108 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 		acceptID := deterministicAcceptID(w.publicBaseURL, item.ActivityID, localActor.ActorURI)
 		payload, err := json.Marshal(map[string]any{
 			"@context": "https://www.w3.org/ns/activitystreams",
-			"id":       acceptID,
-			"type":     "Accept",
-			"actor":    localActor.ActorURI,
-			"to":       []string{item.ActorURI},
-			"object":   json.RawMessage(item.Payload),
+			"id": acceptID, "type": "Accept", "actor": localActor.ActorURI,
+			"to": []string{item.ActorURI}, "object": json.RawMessage(item.Payload),
 		})
-		if err != nil {
-			return permanentInbox("could not encode Accept activity")
-		}
+		if err != nil { return permanentInbox("could not encode Accept activity") }
 		if err := w.store.EnqueueOutbox(ctx, acceptID, localActor.ActorURI, payload, []string{inbox}); err != nil {
 			return fmt.Errorf("enqueue signed Accept delivery: %w", err)
+		}
+		return nil
+	case "Create", "Update":
+		var object struct {
+			ID string `json:"id"`
+			Type string `json:"type"`
+			AttributedTo string `json:"attributedTo"`
+			Content string `json:"content"`
+			Published string `json:"published"`
+			To []string `json:"to"`
+			CC []string `json:"cc"`
+		}
+		if err := json.Unmarshal(activity.Object, &object); err != nil ||
+			!isHTTPSActivityID(object.ID) || object.AttributedTo != item.ActorURI ||
+			(object.Type != "Note" && object.Type != "Article") ||
+			strings.TrimSpace(object.Content) == "" || len(object.Content) > 20000 {
+			return permanentInbox("remote Create/Update object failed identity or content validation")
+		}
+		var publishedAt *time.Time
+		if object.Published != "" {
+			parsed, err := time.Parse(time.RFC3339, object.Published)
+			if err != nil { return permanentInbox("remote object has an invalid published timestamp") }
+			publishedAt = &parsed
+		}
+		visibility := activityVisibility(object.To, object.CC)
+		if err := w.store.UpsertRemoteObject(ctx, store.RemoteObject{
+			ObjectURI: object.ID, ActorURI: item.ActorURI, ObjectType: object.Type,
+			Content: object.Content, PublishedAt: publishedAt, Visibility: visibility,
+			Payload: append([]byte(nil), activity.Object...),
+		}); err != nil { return fmt.Errorf("persist remote object projection: %w", err) }
+		return nil
+	case "Delete":
+		objectURI, ok := activityObjectURI(activity.Object)
+		if !ok { return permanentInbox("Delete activity has an invalid object identifier") }
+		if err := w.store.DeleteRemoteObject(ctx, objectURI, item.ActorURI); err != nil {
+			return fmt.Errorf("tombstone remote object: %w", err)
+		}
+		return nil
+	case "Like":
+		objectURI, ok := activityObjectURI(activity.Object)
+		if !ok { return permanentInbox("Like activity has an invalid object identifier") }
+		if err := w.store.AddRemoteLike(ctx, objectURI, item.ActorURI); err != nil {
+			return fmt.Errorf("persist remote Like: %w", err)
+		}
+		return nil
+	case "Announce":
+		objectURI, ok := activityObjectURI(activity.Object)
+		if !ok { return permanentInbox("Announce activity has an invalid object identifier") }
+		if err := w.store.AddRemoteAnnounce(ctx, objectURI, item.ActorURI); err != nil {
+			return fmt.Errorf("persist remote Announce: %w", err)
 		}
 		return nil
 	case "Undo":
 		var originalID string
 		var original followEnvelope
 		if json.Unmarshal(activity.Object, &originalID) == nil {
-			if !isHTTPSActivityID(originalID) {
-				return permanentInbox("Undo activity references an invalid Follow ID")
-			}
-		} else {
-			if err := json.Unmarshal(activity.Object, &original); err != nil || original.Type != "Follow" || original.Actor != item.ActorURI {
-				return permanentInbox("Undo activity does not contain the matching original Follow")
-			}
+			if !isHTTPSActivityID(originalID) { return permanentInbox("Undo activity references an invalid activity ID") }
+			return permanentInbox("Undo activity by bare ID cannot be safely applied without its original activity type")
+		}
+		if err := json.Unmarshal(activity.Object, &original); err != nil || original.Actor != item.ActorURI {
+			return permanentInbox("Undo activity does not contain an original activity by the authenticated actor")
+		}
+		switch original.Type {
+		case "Follow":
 			target, ok := activityObjectURI(original.Object)
 			if !ok || target != localActor.ActorURI || original.ID == "" || !isHTTPSActivityID(original.ID) {
 				return permanentInbox("Undo activity references an invalid Follow")
 			}
-		}
-		if err := w.store.RemoveRemoteFollower(ctx, profile.UserID, item.ActorURI); err != nil {
-			return fmt.Errorf("remove remote follower: %w", err)
+			if err := w.store.RemoveRemoteFollower(ctx, profile.UserID, item.ActorURI); err != nil {
+				return fmt.Errorf("remove remote follower: %w", err)
+			}
+		case "Like":
+			target, ok := activityObjectURI(original.Object)
+			if !ok { return permanentInbox("Undo Like references an invalid object") }
+			if err := w.store.RemoveRemoteLike(ctx, target, item.ActorURI); err != nil { return fmt.Errorf("remove remote Like: %w", err) }
+		case "Announce":
+			target, ok := activityObjectURI(original.Object)
+			if !ok { return permanentInbox("Undo Announce references an invalid object") }
+			if err := w.store.RemoveRemoteAnnounce(ctx, target, item.ActorURI); err != nil { return fmt.Errorf("remove remote Announce: %w", err) }
+		default:
+			return permanentInbox("Undo activity type is unsupported")
 		}
 		return nil
 	default:
-		return permanentInbox("inbound activity type is durably quarantined until its Backend projection is implemented: " + activity.Type)
+		return permanentInbox("unsupported ActivityPub activity type: " + activity.Type)
 	}
+}
+
+func activityVisibility(to, cc []string) string {
+	const public = "https://www.w3.org/ns/activitystreams#Public"
+	for _, value := range to { if value == public { return "public" } }
+	for _, value := range cc { if value == public { return "unlisted" } }
+	for _, value := range append(append([]string{}, to...), cc...) {
+		if strings.HasSuffix(value, "/followers") { return "followers" }
+	}
+	return "direct"
 }
 
 func activityObjectURI(raw json.RawMessage) (string, bool) {
