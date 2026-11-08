@@ -37,14 +37,14 @@ func (f *fakeOutboxSource) ResolveActorByID(context.Context, string) (backend.Ac
 type fakeOutboxStore struct {
 	cursor          string
 	saved           []string
-	actor            store.Actor
-	inboxes          []string
-	enqueuedID       string
-	enqueuedActor    string
-	enqueuedPayload  []byte
-	enqueuedInboxes  []string
-	enqueueErr       error
-	deadLetters      []string
+	actor           store.Actor
+	inboxes         []string
+	enqueuedID      string
+	enqueuedActor   string
+	enqueuedPayload []byte
+	enqueuedInboxes []string
+	enqueueErr      error
+	deadLetters     []string
 }
 
 func (f *fakeOutboxStore) SyncCursor(context.Context, string) (string, error) {
@@ -84,13 +84,13 @@ func validBackendOutboxFixture(t *testing.T) (backend.OutboxEvent, backend.Actor
 	t.Helper()
 	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
 	payload, err := json.Marshal(publishedPostPayload{
-		ID:          "post_123",
-		AuthorID:    "user_123",
-		ActorHandle: "alice",
+		ID:               "post_123",
+		AuthorID:         "user_123",
+		ActorHandle:      "alice",
 		ActorDisplayName: "Alice",
-		Content:     "Hello from Testagram",
-		Visibility:  "public",
-		CreatedAt:   now,
+		Content:          "Hello from Testagram",
+		Visibility:       "public",
+		CreatedAt:        now,
 	})
 	if err != nil {
 		t.Fatal(err)
