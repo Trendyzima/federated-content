@@ -37,8 +37,8 @@ func (s *Store) ClaimInbox(ctx context.Context, limit int, lease time.Duration) 
 
 	if _, err := tx.ExecContext(ctx, `UPDATE inbox_activities
 		SET state='dead_letter',lease_token=NULL,lease_until=NULL,
-		    last_error=CASE WHEN last_error='' THEN 'maximum processing attempts exceeded' ELSE last_error END,
-		    WHERE attempts >= $1 AND (
+		    last_error=CASE WHEN last_error='' THEN 'maximum processing attempts exceeded' ELSE last_error END
+		WHERE attempts >= $1 AND (
 		    state IN ('accepted','retry') OR (state='processing' AND lease_until < NOW())
 		)`, maxInboxAttempts); err != nil {
 		return nil, fmt.Errorf("expire exhausted inbox activities: %w", err)
