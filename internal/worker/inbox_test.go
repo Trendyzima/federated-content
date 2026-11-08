@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Trendyzima/federated-content/internal/backend"
 	"github.com/Trendyzima/federated-content/internal/store"
@@ -144,8 +145,8 @@ func TestInboxWorkerQuarantinesUnsupportedActivity(t *testing.T) {
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/like-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Like", Payload: payload, LeaseToken: "lease-3"}}}
 	backendClient := fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
-	if err == nil || count != 1 {
-		t.Fatalf("ProcessBatch()=(%d,%v), want quarantined activity error", count, err)
+	if err != nil || count != 1 {
+		t.Fatalf("ProcessBatch()=(%d,%v), want successful quarantine", count, err)
 	}
 	if len(state.failed) != 1 || !state.failed[0].permanent || !strings.Contains(state.failed[0].reason, "durably quarantined") {
 		t.Fatalf("unsupported activity was not dead-lettered: %#v", state.failed)
