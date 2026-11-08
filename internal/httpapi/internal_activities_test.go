@@ -38,9 +38,9 @@ func TestInternalActivityEndpointRequiresRuntimeAfterAuthentication(t *testing.T
 
 func TestValidAuthorizedActivityRequiresMatchingHTTPSIdentity(t *testing.T) {
 	valid := activityEnvelope{
-		ID: "https://testagram.site/activities/123",
-		Type: "Create",
-		Actor: "https://testagram.site/users/alice",
+		ID:     "https://testagram.site/activities/123",
+		Type:   "Create",
+		Actor:  "https://testagram.site/users/alice",
 		Object: []byte(`{"id":"https://testagram.site/posts/123"}`),
 	}
 	if !validAuthorizedActivity(valid, valid.ID) {
