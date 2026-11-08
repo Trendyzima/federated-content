@@ -132,9 +132,13 @@ func TestResolveActorRequiresFreshAPIEnvelopeAndMatchingHandle(t *testing.T) {
 		}))
 		defer server.Close()
 		client, err := New(server.URL, token, server.Client())
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		actor, err := client.ResolveActor(context.Background(), "Alice")
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		if actor.UserID != "user_123" || actor.Handle != "alice" || !actor.FederationEnabled {
 			t.Fatalf("unexpected actor profile: %+v", actor)
 		}
@@ -145,7 +149,9 @@ func TestResolveActorRequiresFreshAPIEnvelopeAndMatchingHandle(t *testing.T) {
 		}))
 		defer server.Close()
 		client, err := New(server.URL, token, server.Client())
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		if _, err := client.ResolveActor(context.Background(), "alice"); err == nil {
 			t.Fatal("bare profile response must not satisfy the Fresh API envelope contract")
 		}
@@ -156,7 +162,9 @@ func TestResolveActorRequiresFreshAPIEnvelopeAndMatchingHandle(t *testing.T) {
 		}))
 		defer server.Close()
 		client, err := New(server.URL, token, server.Client())
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		if _, err := client.ResolveActor(context.Background(), "alice"); err == nil {
 			t.Fatal("actor handle mismatch must be rejected")
 		}
