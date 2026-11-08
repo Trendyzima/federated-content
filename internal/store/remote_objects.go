@@ -37,7 +37,7 @@ func (s *Store) UpsertRemoteObject(ctx context.Context, object RemoteObject) err
 	if object.Visibility != "public" && object.Visibility != "unlisted" && object.Visibility != "followers" && object.Visibility != "direct" {
 		return errors.New("invalid remote object visibility")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO remote_objects
+	result, err := s.db.ExecContext(ctx, `INSERT INTO remote_objects
 		(object_uri,actor_uri,object_type,content,published_at,visibility,payload,updated_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,NOW())
 		ON CONFLICT(object_uri) DO UPDATE SET
@@ -47,6 +47,7 @@ func (s *Store) UpsertRemoteObject(ctx context.Context, object RemoteObject) err
 		WHERE remote_objects.actor_uri=EXCLUDED.actor_uri`,
 		object.ObjectURI, object.ActorURI, object.ObjectType, object.Content, object.PublishedAt, object.Visibility, string(object.Payload))
 	if err != nil { return err }
+	if affected, rowsErr := result.RowsAffected(); rowsErr != nil { return rowsErr } else if affected != 1 { return errors.New("remote object URI is already owned by a different actor") }
 	return nil
 }
 
