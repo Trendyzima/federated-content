@@ -45,7 +45,7 @@ The database stores accepted inbox activities and delivery jobs. The signed deli
 
 ## Service contract
 
-- Public ActivityPub ingress and discovery terminate at this service, not at XClone or the public Backend API.
+- Public ActivityPub ingress and discovery terminate at this service, not at the Flutter client or the public Backend API.
 - Federation-to-Backend calls use `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN` on a private network. The token must be at least 32 characters and must match the Backend's Federation service token. Readiness calls the private `GET /internal/v1/federation/readyz` endpoint with that token; it deliberately does not depend on Algorithm's public home-feed readiness.
 - Backend owns the local-user lookup and eligibility decision. Federation must not create or infer local accounts from usernames.
 - Backend owns post visibility and permissions. Federation may persist remote protocol records but cannot grant local access.
@@ -84,7 +84,7 @@ For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATI
 - Persist idempotency and queue state before acknowledging work. Use leases so crashed workers can be recovered without duplicate side effects.
 - Retry transient remote failures with bounded exponential backoff; permanently rejected or exhausted jobs must be visible in dead-letter state.
 - Never log credentials, private keys, signature material or private activity payloads.
-- Treat remote content as untrusted; sanitize it before display in XClone.
+- Treat remote content as untrusted; sanitize it before the Flutter client renders it.
 - Preserve Backend visibility, blocking and account eligibility decisions. Never turn an ActivityPub receipt into authorization to view a local post.
 
 ## Next milestones
@@ -98,7 +98,7 @@ For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATI
 
 ## Related repositories
 
-- [XClone frontend](https://github.com/Trendyzima/XClone-9b4dz1-9b4dz1-8936-20260809tr)
+- [Testagram Flutter Client](https://github.com/Trendyzima/testagram-flutter-client-)
 - [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-)
 - [the-algorithm](https://github.com/Trendyzima/the-algorithm)
 - [Testagram Data Centre](https://github.com/Trendyzima/Testagram-data-centre-)
