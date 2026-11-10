@@ -6,7 +6,7 @@ The ActivityPub protocol service for the five-repository Testagram platform.
 
 | Repository | Owns | Must not own |
 | --- | --- | --- |
-| [XClone](https://github.com/Trendyzima/XClone-9b4dz1-9b4dz1-8936-20260809tr) | Web/mobile UI, client-side presentation and user interactions | Canonical identity, permissions, federation delivery or media durability |
+| [Testagram Flutter Client](https://github.com/Trendyzima/testagram-flutter-client-) | Web/mobile UI, client-side presentation and user interactions | Canonical identity, permissions, federation delivery or media durability |
 | [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-) | Appwrite identity verification and account mapping; canonical profiles, posts, follows, blocks, visibility, authorization, transactional events and API orchestration in Neon PostgreSQL | ActivityPub protocol execution or ranking policy |
 | **Federated Content (this repository)** | WebFinger, ActivityPub actor documents, remote actor/key discovery, signed inbox ingress, protocol outbox, delivery state and federation workers | Canonical Testagram users/posts, account permissions or media ownership |
 | [the-algorithm](https://github.com/Trendyzima/the-algorithm) | Candidate ranking, recommendation and discovery scoring | Canonical feed authorization, visibility or social graph |
@@ -14,9 +14,9 @@ The ActivityPub protocol service for the five-repository Testagram platform.
 
 The request path is:
 
-`XClone → Testagram Backend → private service APIs/events → Federation / Algorithm / Data Centre`
+`Testagram Flutter Client → Testagram Backend → private service APIs/events → Federation / Algorithm / Data Centre`
 
-Only XClone talks to users. Backend remains the authority for identity, post state, authorization, visibility, social graph and media ownership. The ranker returns ordering only; Backend must re-check access and hydrate canonical post data. Federation stores protocol state and must resolve local actors through Backend. Data Centre supplies infrastructure and durable media storage.
+Only the Testagram Flutter Client talks to users. Backend remains the authority for identity, post state, authorization, visibility, social graph and media ownership. The ranker returns ordering only; Backend must re-check access and hydrate canonical post data. Federation stores protocol state and must resolve local actors through Backend. Data Centre supplies infrastructure and durable media storage.
 
 ## Current implementation status
 
