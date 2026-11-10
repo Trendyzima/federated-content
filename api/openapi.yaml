@@ -89,13 +89,60 @@ paths:
   /users/{username}/inbox:
     post:
       operationId: receiveActivity
-      summary: ActivityPub inbox, disabled until signature verification ships
+      summary: Verify and durably accept a signed ActivityPub activity
+      description: |
+        Verifies the remote actor's HTTP Signature and key ownership, checks local
+        federation consent both before and after verification, persists remote actor
+        metadata, and durably deduplicates the activity in the inbox. Processing is
+        asynchronous; 202 means durable acceptance, not completed delivery or handling.
       parameters:
         - in: path
           name: username
           required: true
           schema:
             type: string
+        - in: header
+          name: Content-Type
+          required: true
+          schema:
+            type: string
+            enum: [application/activity+json, application/ld+json]
+      requestBody:
+        required: true
+        content:
+          application/activity+json:
+            schema:
+              type: object
+              required: [id, type, actor, object]
+              properties:
+                id: {type: string, format: uri}
+                type:
+                  type: string
+                  enum: [Follow, Undo, Create, Update, Delete, Like, Announce, Accept, Reject, Block]
+                actor: {type: string, format: uri}
+                object: {}
+          application/ld+json:
+            schema:
+              type: object
       responses:
-        "501":
-          description: Inbox ingestion is not enabled in this release
+        "202":
+          description: Signed activity durably accepted; duplicate submissions are idempotently acknowledged
+          headers:
+            Location:
+              schema: {type: string, format: uri}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, duplicate, recipient]
+                properties:
+                  status: {type: string, const: accepted}
+                  duplicate: {type: boolean}
+                  recipient: {type: string, format: uri}
+        "400": {description: Invalid ActivityPub identity or malformed activity}
+        "401": {description: HTTP Signature is missing, invalid, expired or does not match the activity actor}
+        "404": {description: Local actor does not exist or has disabled federation}
+        "413": {description: Activity exceeds the one-megabyte limit}
+        "415": {description: ActivityPub content type required}
+        "422": {description: Activity type is not supported}
+        "503": {description: Durable inbox or actor persistence is unavailable}
