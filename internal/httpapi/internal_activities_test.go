@@ -64,7 +64,7 @@ func TestInternalActivityEndpointUsesDedicatedIngressCredential(t *testing.T) {
 	backendToken := strings.Repeat("b", 40)
 	ingressToken := strings.Repeat("i", 40)
 	cfg := config.Config{
-		BackendInternalToken: backendToken,
+		BackendInternalToken:   backendToken,
 		FederationIngressToken: ingressToken,
 	}
 	handler := NewWithRuntime(cfg, slog.Default(), nil, nil)
