@@ -143,7 +143,6 @@ func TestSafeRemoteDialRejectsPrivateAndSpecialPurposeAddresses(t *testing.T) {
 	}
 }
 
-
 func TestVerifyRequestRejectsAmbiguousSignedHeaders(t *testing.T) {
 	private, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -164,8 +163,8 @@ func TestVerifyRequestRejectsAmbiguousSignedHeaders(t *testing.T) {
 	}
 	resolver := fixedResolver{key: PublicKey{ID: keyID, Owner: owner, PEM: publicPEM}}
 	cases := map[string]func(*http.Request){
-		"duplicate Date header": func(r *http.Request) { r.Header.Add("Date", r.Header.Get("Date")) },
-		"duplicate Digest header": func(r *http.Request) { r.Header.Add("Digest", r.Header.Get("Digest")) },
+		"duplicate Date header":      func(r *http.Request) { r.Header.Add("Date", r.Header.Get("Date")) },
+		"duplicate Digest header":    func(r *http.Request) { r.Header.Add("Digest", r.Header.Get("Digest")) },
 		"duplicate Signature header": func(r *http.Request) { r.Header.Add("Signature", r.Header.Get("Signature")) },
 		"duplicate signed-header token": func(r *http.Request) {
 			r.Header.Set("Signature", strings.Replace(r.Header.Get("Signature"), `headers="(request-target) host date digest"`, `headers="(request-target) host date digest date"`, 1))
