@@ -59,3 +59,31 @@ func TestValidAuthorizedActivityRequiresMatchingHTTPSIdentity(t *testing.T) {
 		t.Fatal("accepted unsupported activity type")
 	}
 }
+
+func TestInternalActivityEndpointUsesDedicatedIngressCredential(t *testing.T) {
+	backendToken := strings.Repeat("b", 40)
+	ingressToken := strings.Repeat("i", 40)
+	cfg := config.Config{
+		BackendInternalToken: backendToken,
+		FederationIngressToken: ingressToken,
+	}
+	handler := NewWithRuntime(cfg, slog.Default(), nil, nil)
+
+	wrong := httptest.NewRequest(http.MethodPost, "/internal/v1/activities", strings.NewReader("{}"))
+	wrong.Header.Set("Content-Type", "application/json")
+	wrong.Header.Set("Authorization", "Bearer "+backendToken)
+	wrongRec := httptest.NewRecorder()
+	handler.ServeHTTP(wrongRec, wrong)
+	if wrongRec.Code != http.StatusUnauthorized {
+		t.Fatalf("Backend read token status = %d, want %d", wrongRec.Code, http.StatusUnauthorized)
+	}
+
+	correct := httptest.NewRequest(http.MethodPost, "/internal/v1/activities", strings.NewReader("{}"))
+	correct.Header.Set("Content-Type", "application/json")
+	correct.Header.Set("Authorization", "Bearer "+ingressToken)
+	correctRec := httptest.NewRecorder()
+	handler.ServeHTTP(correctRec, correct)
+	if correctRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Federation ingress token status = %d, want %d", correctRec.Code, http.StatusServiceUnavailable)
+	}
+}
