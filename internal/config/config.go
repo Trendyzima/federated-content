@@ -12,35 +12,37 @@ import (
 var actorUsernamePattern = regexp.MustCompile(`^[a-z0-9_][a-z0-9_.-]{0,63}$`)
 
 type Config struct {
-	AppEnv                string
-	HTTPAddr              string
-	PublicBaseURL         string
-	InstanceDomain        string
-	ServiceActorUsername  string
-	ServiceActorName      string
-	ServiceActorSummary   string
-	PublicKeyPEM          string
-	FederationDatabaseURL string
-	BackendInternalURL    string
-	BackendInternalToken  string
-	DeliveryWorkerEnabled bool
-	OutboxPollerEnabled   bool
-	InboxWorkerEnabled    bool
+	AppEnv                 string
+	HTTPAddr               string
+	PublicBaseURL          string
+	InstanceDomain         string
+	ServiceActorUsername   string
+	ServiceActorName       string
+	ServiceActorSummary    string
+	PublicKeyPEM           string
+	FederationDatabaseURL  string
+	BackendInternalURL     string
+	BackendInternalToken   string
+	FederationIngressToken string
+	DeliveryWorkerEnabled  bool
+	OutboxPollerEnabled    bool
+	InboxWorkerEnabled     bool
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		AppEnv:                env("APP_ENV", "development"),
-		HTTPAddr:              env("HTTP_ADDR", ":8081"),
-		PublicBaseURL:         strings.TrimRight(env("PUBLIC_BASE_URL", "https://federation.testagram.site"), "/"),
-		InstanceDomain:        strings.ToLower(strings.TrimSpace(env("INSTANCE_DOMAIN", "testagram.site"))),
-		ServiceActorUsername:  strings.ToLower(strings.TrimSpace(env("SERVICE_ACTOR_USERNAME", "testagram"))),
-		ServiceActorName:      env("SERVICE_ACTOR_NAME", "Testagram"),
-		ServiceActorSummary:   env("SERVICE_ACTOR_SUMMARY", "The Testagram federated social network"),
-		PublicKeyPEM:          strings.TrimSpace(os.Getenv("PUBLIC_KEY_PEM")),
-		FederationDatabaseURL: strings.TrimSpace(os.Getenv("FEDERATION_DATABASE_URL")),
-		BackendInternalURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_URL")), "/"),
-		BackendInternalToken:  strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_TOKEN")),
+		AppEnv:                 env("APP_ENV", "development"),
+		HTTPAddr:               env("HTTP_ADDR", ":8081"),
+		PublicBaseURL:          strings.TrimRight(env("PUBLIC_BASE_URL", "https://federation.testagram.site"), "/"),
+		InstanceDomain:         strings.ToLower(strings.TrimSpace(env("INSTANCE_DOMAIN", "testagram.site"))),
+		ServiceActorUsername:   strings.ToLower(strings.TrimSpace(env("SERVICE_ACTOR_USERNAME", "testagram"))),
+		ServiceActorName:       env("SERVICE_ACTOR_NAME", "Testagram"),
+		ServiceActorSummary:    env("SERVICE_ACTOR_SUMMARY", "The Testagram federated social network"),
+		PublicKeyPEM:           strings.TrimSpace(os.Getenv("PUBLIC_KEY_PEM")),
+		FederationDatabaseURL:  strings.TrimSpace(os.Getenv("FEDERATION_DATABASE_URL")),
+		BackendInternalURL:     strings.TrimRight(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_URL")), "/"),
+		BackendInternalToken:   strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_TOKEN")),
+		FederationIngressToken: strings.TrimSpace(os.Getenv("FEDERATION_INGRESS_TOKEN")),
 	}
 	deliveryWorkerEnabled, err := strconv.ParseBool(env("FEDERATION_DELIVERY_WORKER_ENABLED", "false"))
 	if err != nil {
@@ -85,6 +87,9 @@ func Load() (Config, error) {
 	}
 	if cfg.InboxWorkerEnabled && cfg.BackendInternalURL == "" {
 		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires private Backend integration")
+	}
+	if cfg.FederationIngressToken != "" && (len(cfg.FederationIngressToken) < 32 || strings.ContainsAny(cfg.FederationIngressToken, "\r\n")) {
+		return Config{}, fmt.Errorf("FEDERATION_INGRESS_TOKEN must contain at least 32 characters")
 	}
 	if cfg.BackendInternalURL != "" {
 		backendURL, backendErr := url.Parse(cfg.BackendInternalURL)
