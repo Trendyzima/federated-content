@@ -115,7 +115,7 @@ func (s *Store) FailInbox(ctx context.Context, activityID, leaseToken, reason st
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE inbox_activities SET
 		state=CASE WHEN $3 OR attempts >= $4 THEN 'dead_letter' ELSE 'retry' END,
-		available_at=CASE WHEN $3 OR attempts >= $4 THEN available_at ELSE NOW()+((1 << LEAST(attempts,10)) * INTERVAL '1 second') END,
+		available_at=CASE WHEN $3 OR attempts >= $4 THEN available_at ELSE NOW()+(LEAST(900.0,(1 << LEAST(attempts,10))::double precision*(0.5+random())) * INTERVAL '1 second') END,
 		lease_token=NULL,lease_until=NULL,last_error=$5
 		WHERE activity_id=$1 AND state='processing' AND lease_token=$2`,
 		activityID, leaseToken, permanent, maxInboxAttempts, reason)
