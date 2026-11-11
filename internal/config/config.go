@@ -23,6 +23,7 @@ type Config struct {
 	FederationDatabaseURL string
 	BackendInternalURL    string
 	BackendInternalToken  string
+	FederationIngressToken string
 	DeliveryWorkerEnabled bool
 	OutboxPollerEnabled   bool
 	InboxWorkerEnabled    bool
@@ -41,6 +42,7 @@ func Load() (Config, error) {
 		FederationDatabaseURL: strings.TrimSpace(os.Getenv("FEDERATION_DATABASE_URL")),
 		BackendInternalURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_URL")), "/"),
 		BackendInternalToken:  strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_TOKEN")),
+		FederationIngressToken: strings.TrimSpace(os.Getenv("FEDERATION_INGRESS_TOKEN")),
 	}
 	deliveryWorkerEnabled, err := strconv.ParseBool(env("FEDERATION_DELIVERY_WORKER_ENABLED", "false"))
 	if err != nil {
@@ -85,6 +87,9 @@ func Load() (Config, error) {
 	}
 	if cfg.InboxWorkerEnabled && cfg.BackendInternalURL == "" {
 		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires private Backend integration")
+	}
+	if cfg.FederationIngressToken != "" && (len(cfg.FederationIngressToken) < 32 || strings.ContainsAny(cfg.FederationIngressToken, "\\r\\n")) {
+		return Config{}, fmt.Errorf("FEDERATION_INGRESS_TOKEN must contain at least 32 characters")
 	}
 	if cfg.BackendInternalURL != "" {
 		backendURL, backendErr := url.Parse(cfg.BackendInternalURL)
