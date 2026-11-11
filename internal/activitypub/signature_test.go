@@ -142,3 +142,43 @@ func TestSafeRemoteDialRejectsPrivateAndSpecialPurposeAddresses(t *testing.T) {
 		}
 	}
 }
+
+
+func TestVerifyRequestRejectsAmbiguousSignedHeaders(t *testing.T) {
+	private, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := "https://remote.example/users/alice"
+	keyID := owner + "#main-key"
+	publicDER, err := x509.MarshalPKIXPublicKey(&private.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}))
+	body := []byte(`{"id":"https://remote.example/activities/ambiguous","type":"Follow","actor":"https://remote.example/users/alice"}`)
+	now := time.Now().UTC().Truncate(time.Second)
+	req := httptest.NewRequest(http.MethodPost, "https://federation.testagram.site/users/local/inbox", strings.NewReader(string(body)))
+	if err := SignRequest(req, body, keyID, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(private)})), now); err != nil {
+		t.Fatal(err)
+	}
+	resolver := fixedResolver{key: PublicKey{ID: keyID, Owner: owner, PEM: publicPEM}}
+	cases := map[string]func(*http.Request){
+		"duplicate Date header": func(r *http.Request) { r.Header.Add("Date", r.Header.Get("Date")) },
+		"duplicate Digest header": func(r *http.Request) { r.Header.Add("Digest", r.Header.Get("Digest")) },
+		"duplicate Signature header": func(r *http.Request) { r.Header.Add("Signature", r.Header.Get("Signature")) },
+		"duplicate signed-header token": func(r *http.Request) {
+			r.Header.Set("Signature", strings.Replace(r.Header.Get("Signature"), `headers="(request-target) host date digest"`, `headers="(request-target) host date digest date"`, 1))
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			bad := req.Clone(context.Background())
+			bad.Header = req.Header.Clone()
+			mutate(bad)
+			if _, err := VerifyRequest(context.Background(), bad, body, resolver, now); err == nil {
+				t.Fatal("ambiguous HTTP signature input was accepted")
+			}
+		})
+	}
+}
