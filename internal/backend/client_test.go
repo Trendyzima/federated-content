@@ -233,7 +233,7 @@ func TestRemoteUnfollowCallsBackendBeforeLocalRoutingRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.RemoveRemoteFollow(context.Background(), "123e4567-e89b-12d3-a456-426614174000", "https://remote.example/users/bob", "https://remote.example/activities/undo-1"); err != nil {
+	if err := client.RemoveRemoteFollow(context.Background(), "123e4567-e89b-12d3-a456-426614174000", "https://remote.example/users/bob", "https://remote.example/activities/undo-1", "https://remote.example/activities/follow-1"); err != nil {
 		t.Fatal(err)
 	}
 }
