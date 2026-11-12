@@ -349,7 +349,7 @@ func (s *Store) FailDelivery(ctx context.Context, id int64, token, reason string
 	result, err := s.db.ExecContext(ctx, `UPDATE delivery_jobs SET
 		attempts=attempts+1,
 		state=CASE WHEN $3 OR attempts+1 >= $4 THEN 'dead_letter' ELSE 'retry' END,
-		available_at=CASE WHEN $3 OR attempts+1 >= $4 THEN available_at ELSE NOW()+((1 << LEAST(attempts,10)) * INTERVAL '1 second') END,
+		available_at=CASE WHEN $3 OR attempts+1 >= $4 THEN available_at ELSE NOW()+(LEAST(900.0,(1 << LEAST(attempts,10))::double precision*(0.5+random())) * INTERVAL '1 second') END,
 		lease_token=NULL,lease_until=NULL,last_error=$5
 		WHERE id=$1 AND state='delivering' AND lease_token=$2`, id, token, permanent, maxDeliveryAttempts, reason)
 	if err != nil {

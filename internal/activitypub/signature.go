@@ -84,11 +84,16 @@ func parseRSAPrivateKey(value string) (*rsa.PrivateKey, error) {
 }
 
 func VerifyRequest(ctx context.Context, request *http.Request, body []byte, resolver KeyResolver, now time.Time) (PublicKey, error) {
-	if request == nil || resolver == nil {
+	if request == nil || request.URL == nil || resolver == nil {
 		return PublicKey{}, errors.New("signature verifier is not configured")
 	}
 	if len(body) == 0 || len(body) > 1<<20 {
 		return PublicKey{}, errors.New("ActivityPub body size is invalid")
+	}
+	if len(request.Header.Values("Signature")) != 1 ||
+		len(request.Header.Values("Date")) != 1 ||
+		len(request.Header.Values("Digest")) != 1 || strings.TrimSpace(request.Host) == "" {
+		return PublicKey{}, errors.New("HTTP Signature, Date, Digest and Host must each be present exactly once")
 	}
 	params, err := parseSignatureHeader(request.Header.Get("Signature"))
 	if err != nil {
@@ -103,7 +108,15 @@ func VerifyRequest(ctx context.Context, request *http.Request, body []byte, reso
 	}
 	signedHeaders := strings.Fields(strings.ToLower(params["headers"]))
 	required := map[string]bool{"(request-target)": false, "host": false, "date": false, "digest": false}
+	seen := make(map[string]struct{}, len(signedHeaders))
 	for _, header := range signedHeaders {
+		if _, duplicate := seen[header]; duplicate {
+			return PublicKey{}, fmt.Errorf("HTTP Signature repeats signed header %s", header)
+		}
+		seen[header] = struct{}{}
+		if header == "" || strings.ContainsAny(header, ":,;\\\"") {
+			return PublicKey{}, errors.New("HTTP Signature contains an invalid signed header name")
+		}
 		if _, ok := required[header]; ok {
 			required[header] = true
 		}
@@ -142,7 +155,11 @@ func VerifyRequest(ctx context.Context, request *http.Request, body []byte, reso
 		case "host":
 			value = request.Host
 		default:
-			value = request.Header.Get(http.CanonicalHeaderKey(header))
+			values := request.Header.Values(http.CanonicalHeaderKey(header))
+			if len(values) != 1 {
+				return PublicKey{}, fmt.Errorf("signed header %s must occur exactly once", header)
+			}
+			value = values[0]
 		}
 		if value == "" {
 			return PublicKey{}, fmt.Errorf("signed header %s is missing", header)
