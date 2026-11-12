@@ -141,7 +141,7 @@ func TestInboxWorkerProcessesUndoFollow(t *testing.T) {
 	original := map[string]any{"id": "https://remote.example/activities/follow-1", "type": "Follow", "actor": actorURI, "object": localURI}
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/undo-1", "type": "Undo", "actor": actorURI, "object": original})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/undo-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Undo", Payload: payload, LeaseToken: "lease-2"}}}
-	backendClient := fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
+	backendClient := &fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
 	if err != nil || count != 1 {
 		t.Fatalf("ProcessBatch()=(%d,%v)", count, err)
@@ -161,7 +161,7 @@ func TestInboxWorkerQuarantinesUnsupportedActivity(t *testing.T) {
 	actorURI := "https://remote.example/users/bob"
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/like-1", "type": "Like", "actor": actorURI, "object": "https://federation.testagram.site/posts/post_123"})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/like-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Like", Payload: payload, LeaseToken: "lease-3"}}}
-	backendClient := fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
+	backendClient := &fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
 	if err != nil || count != 1 {
 		t.Fatalf("ProcessBatch()=(%d,%v), want successful quarantine", count, err)
