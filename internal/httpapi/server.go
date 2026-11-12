@@ -49,6 +49,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /.well-known/webfinger", s.webfinger)
 	s.mux.HandleFunc("GET /users/{username}", s.actor)
 	s.mux.HandleFunc("GET /users/{username}/outbox", s.outbox)
+	s.mux.HandleFunc("GET /objects/{post_id}", s.object)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
 	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
 }
@@ -196,6 +197,34 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Vary", "Accept")
 	w.Header().Set("Cache-Control", "no-store")
 	writeActivityJSON(w, http.StatusOK, map[string]any{"@context": "https://www.w3.org/ns/activitystreams", "id": actor.ActorURI + "/outbox", "type": "OrderedCollection", "totalItems": total, "orderedItems": items})
+}
+
+func (s *Server) object(w http.ResponseWriter, r *http.Request) {
+	if !acceptsActivityJSON(r.Header.Get("Accept")) {
+		w.Header().Set("Vary", "Accept")
+		writeError(w, http.StatusNotAcceptable, "activitypub_accept_required", "Request an ActivityPub representation using Accept: application/activity+json")
+		return
+	}
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "object_unavailable", "Private Backend object resolution is not configured")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	object, err := s.backend.GetPublicObject(ctx, r.PathValue("post_id"))
+	if errors.Is(err, backend.ErrObjectNotFound) {
+		writeError(w, http.StatusNotFound, "object_not_found", "The public federated object is unavailable")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "object_unavailable", "Canonical public object resolution is temporarily unavailable")
+		return
+	}
+	w.Header().Set("Vary", "Accept")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", activityJSON+"; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(object)
 }
 
 func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
