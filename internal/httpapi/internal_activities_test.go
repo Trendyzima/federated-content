@@ -24,7 +24,10 @@ func TestInternalActivityEndpointRejectsMissingServiceCredential(t *testing.T) {
 
 func TestInternalActivityEndpointRequiresRuntimeAfterAuthentication(t *testing.T) {
 	token := strings.Repeat("s", 40)
-	cfg := config.Config{BackendInternalToken: token}
+	cfg := config.Config{
+		BackendInternalToken:   strings.Repeat("b", 40),
+		FederationIngressToken: token,
+	}
 	handler := NewWithRuntime(cfg, slog.Default(), nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/activities", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
@@ -85,5 +88,19 @@ func TestInternalActivityEndpointUsesDedicatedIngressCredential(t *testing.T) {
 	handler.ServeHTTP(correctRec, correct)
 	if correctRec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("Federation ingress token status = %d, want %d", correctRec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestInternalActivityEndpointDoesNotFallbackToBackendReadCredential(t *testing.T) {
+	backendToken := strings.Repeat("b", 40)
+	cfg := config.Config{BackendInternalToken: backendToken}
+	handler := NewWithRuntime(cfg, slog.Default(), nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/activities", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+backendToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("reverse-direction credential status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }

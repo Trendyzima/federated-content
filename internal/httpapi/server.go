@@ -49,6 +49,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /.well-known/webfinger", s.webfinger)
 	s.mux.HandleFunc("GET /users/{username}", s.actor)
 	s.mux.HandleFunc("GET /users/{username}/outbox", s.outbox)
+	s.mux.HandleFunc("GET /objects/{post_id}", s.object)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
 	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
 }
@@ -198,6 +199,34 @@ func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
 	writeActivityJSON(w, http.StatusOK, map[string]any{"@context": "https://www.w3.org/ns/activitystreams", "id": actor.ActorURI + "/outbox", "type": "OrderedCollection", "totalItems": total, "orderedItems": items})
 }
 
+func (s *Server) object(w http.ResponseWriter, r *http.Request) {
+	if !acceptsActivityJSON(r.Header.Get("Accept")) {
+		w.Header().Set("Vary", "Accept")
+		writeError(w, http.StatusNotAcceptable, "activitypub_accept_required", "Request an ActivityPub representation using Accept: application/activity+json")
+		return
+	}
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "object_unavailable", "Private Backend object resolution is not configured")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	object, err := s.backend.GetPublicObject(ctx, r.PathValue("post_id"))
+	if errors.Is(err, backend.ErrObjectNotFound) {
+		writeError(w, http.StatusNotFound, "object_not_found", "The public federated object is unavailable")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "object_unavailable", "Canonical public object resolution is temporarily unavailable")
+		return
+	}
+	w.Header().Set("Vary", "Accept")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", activityJSON+"; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(object)
+}
+
 func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 	if s.state == nil || s.keys == nil {
 		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Durable signed inbox processing is not configured")
@@ -241,10 +270,8 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_activity", "ActivityPub activity identity is invalid")
 		return
 	}
-	switch activity.Type {
-	case "Follow", "Undo", "Create", "Update", "Delete", "Like", "Announce", "Accept", "Reject", "Block":
-	default:
-		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "ActivityPub activity type is not supported")
+	if !supportedInboxActivityType(activity.Type) {
+		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "Only signed Follow and Undo activities are enabled for inbound processing")
 		return
 	}
 	// Recheck consent and account status after signature verification. This
@@ -277,6 +304,10 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", activity.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "duplicate": !inserted, "recipient": localActor.ActorURI})
+}
+
+func supportedInboxActivityType(activityType string) bool {
+	return activityType == "Follow" || activityType == "Undo"
 }
 
 func isActivityPubContentType(raw string) bool {

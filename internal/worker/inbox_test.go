@@ -72,12 +72,24 @@ func (f *fakeInboxStore) EnqueueOutbox(_ context.Context, id, actor string, payl
 }
 
 type fakeInboxBackend struct {
-	profile backend.ActorProfile
-	err     error
+	profile          backend.ActorProfile
+	err              error
+	acceptErr        error
+	removeErr        error
+	accepted         []string
+	removedByBackend []string
 }
 
-func (f fakeInboxBackend) ResolveActor(context.Context, string) (backend.ActorProfile, error) {
+func (f *fakeInboxBackend) ResolveActor(context.Context, string) (backend.ActorProfile, error) {
 	return f.profile, f.err
+}
+func (f *fakeInboxBackend) AcceptRemoteFollow(_ context.Context, userID, actorURI, activityID string) error {
+	f.accepted = append(f.accepted, userID+":"+actorURI+":"+activityID)
+	return f.acceptErr
+}
+func (f *fakeInboxBackend) RemoveRemoteFollow(_ context.Context, userID, actorURI, activityID, followActivityID string) error {
+	f.removedByBackend = append(f.removedByBackend, userID+":"+actorURI+":"+activityID+":"+followActivityID)
+	return f.removeErr
 }
 
 func testInboxWorker(state *fakeInboxStore, backendClient InboxBackend) *InboxWorker {
@@ -89,7 +101,7 @@ func TestInboxWorkerAcceptsFollowAndQueuesAccept(t *testing.T) {
 	localURI := "https://federation.testagram.site/users/alice"
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/follow-1", "type": "Follow", "actor": actorURI, "object": localURI})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/follow-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Follow", Payload: payload, LeaseToken: "lease-1"}}}
-	backendClient := fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", DisplayName: "Alice", FederationEnabled: true}}
+	backendClient := &fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", DisplayName: "Alice", FederationEnabled: true}}
 	worker := testInboxWorker(state, backendClient)
 	count, err := worker.ProcessBatch(context.Background())
 	if err != nil || count != 1 {
@@ -97,6 +109,9 @@ func TestInboxWorkerAcceptsFollowAndQueuesAccept(t *testing.T) {
 	}
 	if len(state.added) != 1 || state.added[0] != "user_123:"+actorURI {
 		t.Fatalf("remote follower was not stored: %#v", state.added)
+	}
+	if len(backendClient.accepted) != 1 || backendClient.accepted[0] != "user_123:"+actorURI+":https://remote.example/activities/follow-1" {
+		t.Fatalf("Backend did not authorize the canonical remote follow first: %#v", backendClient.accepted)
 	}
 	if len(state.acked) != 1 || state.acked[0] != "https://remote.example/activities/follow-1" {
 		t.Fatalf("Follow was not acknowledged: %#v", state.acked)
@@ -126,13 +141,16 @@ func TestInboxWorkerProcessesUndoFollow(t *testing.T) {
 	original := map[string]any{"id": "https://remote.example/activities/follow-1", "type": "Follow", "actor": actorURI, "object": localURI}
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/undo-1", "type": "Undo", "actor": actorURI, "object": original})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/undo-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Undo", Payload: payload, LeaseToken: "lease-2"}}}
-	backendClient := fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
+	backendClient := &fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
 	if err != nil || count != 1 {
 		t.Fatalf("ProcessBatch()=(%d,%v)", count, err)
 	}
 	if len(state.removed) != 1 || state.removed[0] != "user_123:"+actorURI {
 		t.Fatalf("Undo did not remove the remote follower: %#v", state.removed)
+	}
+	if len(backendClient.removedByBackend) != 1 || backendClient.removedByBackend[0] != "user_123:"+actorURI+":https://remote.example/activities/undo-1:https://remote.example/activities/follow-1" {
+		t.Fatalf("Undo was not applied to Backend canonical social graph: %#v", backendClient.removedByBackend)
 	}
 	if len(state.acked) != 1 || len(state.failed) != 0 {
 		t.Fatalf("Undo was not acknowledged cleanly: ack=%v failed=%v", state.acked, state.failed)
@@ -143,7 +161,7 @@ func TestInboxWorkerQuarantinesUnsupportedActivity(t *testing.T) {
 	actorURI := "https://remote.example/users/bob"
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/like-1", "type": "Like", "actor": actorURI, "object": "https://federation.testagram.site/posts/post_123"})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/like-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Like", Payload: payload, LeaseToken: "lease-3"}}}
-	backendClient := fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
+	backendClient := &fakeInboxBackend{profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true}}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
 	if err != nil || count != 1 {
 		t.Fatalf("ProcessBatch()=(%d,%v), want successful quarantine", count, err)
@@ -160,12 +178,52 @@ func TestInboxWorkerRetriesBackendOutage(t *testing.T) {
 	actorURI := "https://remote.example/users/bob"
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/follow-1", "type": "Follow", "actor": actorURI, "object": "https://federation.testagram.site/users/alice"})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/follow-1", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Follow", Payload: payload, LeaseToken: "lease-4"}}}
-	backendClient := fakeInboxBackend{err: errors.New("Backend temporarily unavailable")}
+	backendClient := &fakeInboxBackend{err: errors.New("Backend temporarily unavailable")}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
 	if err == nil || count != 1 {
 		t.Fatalf("ProcessBatch()=(%d,%v), want retry error", count, err)
 	}
 	if len(state.failed) != 1 || state.failed[0].permanent {
 		t.Fatalf("Backend outage should be retryable: %#v", state.failed)
+	}
+}
+
+func TestInboxWorkerQuarantinesFollowRejectedByBackend(t *testing.T) {
+	actorURI := "https://remote.example/users/bob"
+	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/follow-denied", "type": "Follow", "actor": actorURI, "object": "https://federation.testagram.site/users/alice"})
+	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/follow-denied", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Follow", Payload: payload, LeaseToken: "lease-denied"}}}
+	backendClient := &fakeInboxBackend{
+		profile:   backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true},
+		acceptErr: backend.ErrRemoteFollowNotAuthorized,
+	}
+	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
+	if err != nil || count != 1 {
+		t.Fatalf("ProcessBatch()=(%d,%v), want permanent quarantine", count, err)
+	}
+	if len(state.added) != 0 || state.queuedID != "" {
+		t.Fatalf("Backend-rejected Follow changed Federation state or sent Accept: %#v", state)
+	}
+	if len(state.failed) != 1 || !state.failed[0].permanent {
+		t.Fatalf("Backend rejection was not dead-lettered: %#v", state.failed)
+	}
+}
+
+func TestInboxWorkerRetriesFollowWhenBackendCanonicalWriteFails(t *testing.T) {
+	actorURI := "https://remote.example/users/bob"
+	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/follow-retry", "type": "Follow", "actor": actorURI, "object": "https://federation.testagram.site/users/alice"})
+	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/follow-retry", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Follow", Payload: payload, LeaseToken: "lease-retry"}}}
+	backendClient := &fakeInboxBackend{
+		profile:   backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true},
+		acceptErr: errors.New("Backend database unavailable"),
+	}
+	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
+	if err == nil || count != 1 {
+		t.Fatalf("ProcessBatch()=(%d,%v), want retryable Backend failure", count, err)
+	}
+	if len(state.added) != 0 || state.queuedID != "" {
+		t.Fatalf("Federation state changed before Backend commit: %#v", state)
+	}
+	if len(state.failed) != 1 || state.failed[0].permanent {
+		t.Fatalf("Backend write outage should be retryable: %#v", state.failed)
 	}
 }

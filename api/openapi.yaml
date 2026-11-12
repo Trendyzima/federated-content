@@ -2,7 +2,10 @@ openapi: 3.1.0
 info:
   title: Testagram Federated Content API
   version: 0.1.0
-  description: Public ActivityPub discovery and actor endpoints. Inbox ingestion is disabled in this release.
+  description: >
+    Public ActivityPub discovery, actor, outbox and signed inbox endpoints. Route registration
+    does not imply production public exposure or worker activation; those remain gated by
+    interoperability, security, operational recovery and explicit deployment approval.
 servers:
   - url: https://federation.testagram.site
 paths:
@@ -19,7 +22,9 @@ paths:
       summary: Service readiness
       responses:
         "200":
-          description: Ready; the initial release has no external dependencies
+          description: Federation PostgreSQL and the private Backend identity dependency are healthy.
+        "503":
+          description: Federation storage or the private Backend dependency is unavailable.
   /.well-known/webfinger:
     get:
       operationId: webfinger
@@ -70,7 +75,7 @@ paths:
   /users/{username}/outbox:
     get:
       operationId: getOutbox
-      summary: Fetch the configured actor's empty initial outbox
+      summary: Fetch the configured actor's persisted ActivityPub outbox
       parameters:
         - in: path
           name: username
@@ -79,22 +84,68 @@ paths:
             type: string
       responses:
         "200":
-          description: Empty OrderedCollection
+          description: Persisted ActivityPub OrderedCollection; it may be empty when the actor has not published federated activities.
           content:
             application/activity+json:
               schema:
                 type: object
         "404":
           description: Actor not found
+  /objects/{post_id}:
+    get:
+      operationId: getPublicObject
+      summary: Resolve a canonical public Testagram post as an ActivityPub Note
+      parameters:
+        - in: path
+          name: post_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: Accept
+          required: true
+          schema:
+            type: string
+            example: application/activity+json
+      responses:
+        "200":
+          description: Canonical public ActivityPub Note resolved through Backend.
+          content:
+            application/activity+json:
+              schema:
+                type: object
+                required: [id, type, attributedTo, content, mediaType, published, to]
+                properties:
+                  "@context": { type: string }
+                  id: { type: string, format: uri }
+                  type: { type: string, const: Note }
+                  attributedTo: { type: string, format: uri }
+                  content: { type: string }
+                  mediaType: { type: string, const: text/html }
+                  published: { type: string, format: date-time }
+                  to:
+                    type: array
+                    items: { type: string, format: uri }
+        "404":
+          description: Post is missing, private, deleted, protected or no longer federation-eligible.
+        "406":
+          description: ActivityPub Accept header required
+        "503":
+          description: Private Backend object resolution is unavailable
   /users/{username}/inbox:
     post:
       operationId: receiveActivity
       summary: Verify and durably accept a signed ActivityPub activity
       description: |
         Verifies the remote actor's HTTP Signature and key ownership, checks local
-        federation consent both before and after verification, persists remote actor
-        metadata, and durably deduplicates the activity in the inbox. Processing is
-        asynchronous; 202 means durable acceptance, not completed delivery or handling.
+        federation consent both before and after verification, and durably deduplicates
+        supported Follow/Undo activities. Other ActivityPub activity types return 422
+        until their Backend-authorized projections are implemented. Processing is
+        asynchronous; 202 means durable acceptance, not completed handling.
+        Follow and Undo are the only inbound activities with active domain processing in the
+        current release; other accepted types remain quarantined until their Backend-authorized
+        projections are implemented. Public routing and worker activation are separate release gates.
       parameters:
         - in: path
           name: username
@@ -118,7 +169,7 @@ paths:
                 id: {type: string, format: uri}
                 type:
                   type: string
-                  enum: [Follow, Undo, Create, Update, Delete, Like, Announce, Accept, Reject, Block]
+                  enum: [Follow, Undo]
                 actor: {type: string, format: uri}
                 object: {}
           application/ld+json:

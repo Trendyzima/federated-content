@@ -29,6 +29,8 @@ type InboxStore interface {
 
 type InboxBackend interface {
 	ResolveActor(context.Context, string) (backend.ActorProfile, error)
+	AcceptRemoteFollow(context.Context, string, string, string) error
+	RemoveRemoteFollow(context.Context, string, string, string, string) error
 }
 
 type InboxWorker struct {
@@ -144,8 +146,14 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 		if !ok || target != localActor.ActorURI {
 			return permanentInbox("Follow activity targets a different local actor")
 		}
+		if err := w.backend.AcceptRemoteFollow(ctx, profile.UserID, item.ActorURI, item.ActivityID); err != nil {
+			if errors.Is(err, backend.ErrRemoteFollowNotAuthorized) || errors.Is(err, backend.ErrRemoteFollowConflict) {
+				return permanentInbox("Backend rejected the remote follow or local account is no longer eligible")
+			}
+			return fmt.Errorf("authorize remote follow in Backend: %w", err)
+		}
 		if err := w.store.AddRemoteFollower(ctx, profile.UserID, item.ActorURI); err != nil {
-			return fmt.Errorf("persist accepted remote follower: %w", err)
+			return fmt.Errorf("persist authorized remote follower routing cache: %w", err)
 		}
 		inbox, err := w.store.RemoteActorInbox(ctx, item.ActorURI)
 		if err != nil {
@@ -182,9 +190,16 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 			if !ok || target != localActor.ActorURI || original.ID == "" || !isHTTPSActivityID(original.ID) {
 				return permanentInbox("Undo activity references an invalid Follow")
 			}
+			originalID = original.ID
+		}
+		if err := w.backend.RemoveRemoteFollow(ctx, profile.UserID, item.ActorURI, activity.ID, originalID); err != nil {
+			if errors.Is(err, backend.ErrRemoteFollowNotAuthorized) || errors.Is(err, backend.ErrRemoteFollowConflict) {
+				return permanentInbox("Backend rejected an unmatched or unauthorized remote Undo Follow")
+			}
+			return fmt.Errorf("remove canonical remote follow in Backend: %w", err)
 		}
 		if err := w.store.RemoveRemoteFollower(ctx, profile.UserID, item.ActorURI); err != nil {
-			return fmt.Errorf("remove remote follower: %w", err)
+			return fmt.Errorf("remove remote follower routing cache: %w", err)
 		}
 		return nil
 	default:

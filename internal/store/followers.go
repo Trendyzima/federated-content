@@ -58,3 +58,55 @@ func validateStoredInboxURL(raw string) error {
 	}
 	return nil
 }
+
+// RemoteFollowerInboxesPage returns one stable lexical page of deduplicated
+// delivery endpoints. The cursor advances over raw destinations, including
+// invalid persisted URLs, so a bad row cannot stall or truncate fan-out.
+func (s *Store) RemoteFollowerInboxesPage(ctx context.Context, localUserID, after string, limit int) ([]string, string, bool, error) {
+	localUserID = strings.TrimSpace(localUserID)
+	if localUserID == "" || len(localUserID) > 128 || len(after) > 2048 || limit < 1 || limit > 1000 {
+		return nil, "", false, errors.New("invalid remote follower inbox page query")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT inbox_url FROM (
+			SELECT DISTINCT COALESCE(NULLIF(ra.shared_inbox_url, ''), ra.inbox_url) AS inbox_url
+			FROM remote_followers rf
+			JOIN remote_actors ra ON ra.actor_uri=rf.remote_actor_uri
+			WHERE rf.local_user_id=$1
+		) destinations
+		WHERE inbox_url > $2
+		ORDER BY inbox_url
+		LIMIT $3`, localUserID, after, limit+1)
+	if err != nil {
+		return nil, "", false, err
+	}
+	defer rows.Close()
+	raw := make([]string, 0, limit+1)
+	for rows.Next() {
+		var inbox string
+		if err := rows.Scan(&inbox); err != nil {
+			return nil, "", false, err
+		}
+		raw = append(raw, inbox)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", false, err
+	}
+	hasMore := len(raw) > limit
+	if hasMore {
+		raw = raw[:limit]
+	}
+	if len(raw) == 0 {
+		return nil, after, false, nil
+	}
+	next := raw[len(raw)-1]
+	inboxes := make([]string, 0, len(raw))
+	for _, value := range raw {
+		u, parseErr := url.Parse(strings.TrimSpace(value))
+		if parseErr != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			continue
+		}
+		inboxes = append(inboxes, u.String())
+	}
+	return inboxes, next, hasMore, nil
+}
