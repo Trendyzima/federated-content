@@ -1,6 +1,8 @@
 package backend
 
 import (
+	"encoding/json"
+	"errors"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -169,4 +171,69 @@ func TestResolveActorRequiresFreshAPIEnvelopeAndMatchingHandle(t *testing.T) {
 			t.Fatal("actor handle mismatch must be rejected")
 		}
 	})
+}
+
+func TestRemoteFollowUsesBackendCanonicalAuthority(t *testing.T) {
+	const token = "test-federation-service-token-which-is-long-enough"
+	actorURI := "https://remote.example/users/bob"
+	followID := "https://remote.example/activities/follow-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/v1/federation/remote-follows" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("X-Testagram-API-Version") != "1" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("private follow request headers are incomplete")
+		}
+		var input map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Error(err)
+		}
+		if input["local_user_id"] != "123e4567-e89b-12d3-a456-426614174000" || input["remote_actor_uri"] != actorURI || input["activity_id"] != followID {
+			t.Errorf("remote follow request body = %#v", input)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"status":"accepted"},"error":null,"request_id":"test"}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, token, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.AcceptRemoteFollow(context.Background(), "123e4567-e89b-12d3-a456-426614174000", actorURI, followID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemoteFollowMapsBackendRejectionToPermanentError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, strings.Repeat("t", 40), server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.AcceptRemoteFollow(context.Background(), "123e4567-e89b-12d3-a456-426614174000", "https://remote.example/users/bob", "https://remote.example/activities/follow-1")
+	if !errors.Is(err, ErrRemoteFollowNotAuthorized) {
+		t.Fatalf("error = %v, want ErrRemoteFollowNotAuthorized", err)
+	}
+}
+
+func TestRemoteUnfollowCallsBackendBeforeLocalRoutingRemoval(t *testing.T) {
+	const token = "test-federation-service-token-which-is-long-enough"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/v1/federation/remote-follows/undo" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"removed":true},"error":null,"request_id":"test"}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, token, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.RemoveRemoteFollow(context.Background(), "123e4567-e89b-12d3-a456-426614174000", "https://remote.example/users/bob", "https://remote.example/activities/undo-1"); err != nil {
+		t.Fatal(err)
+	}
 }
