@@ -149,11 +149,7 @@ func (s *Store) RemoteFollowersPage(ctx context.Context, localUserID, after stri
   if err := rows.Scan(&actorURI); err != nil {
    return nil, "", false, err
   }
-  parsed, parseErr := url.Parse(strings.TrimSpace(actorURI))
-  if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
-   continue
-  }
-  raw = append(raw, parsed.String())
+  raw = append(raw, actorURI)
  }
  if err := rows.Err(); err != nil {
   return nil, "", false, err
@@ -165,5 +161,16 @@ func (s *Store) RemoteFollowersPage(ctx context.Context, localUserID, after stri
  if len(raw) == 0 {
   return nil, after, false, nil
  }
- return raw, raw[len(raw)-1], hasMore, nil
+ // Advance over every selected row, including malformed legacy rows, so a
+ // corrupt persisted URI cannot pin the collection cursor indefinitely.
+ next := raw[len(raw)-1]
+ actors := make([]string, 0, len(raw))
+ for _, actorURI := range raw {
+  parsed, parseErr := url.Parse(strings.TrimSpace(actorURI))
+  if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+   continue
+  }
+  actors = append(actors, parsed.String())
+ }
+ return actors, next, hasMore, nil
 }
