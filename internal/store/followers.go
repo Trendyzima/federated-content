@@ -60,8 +60,8 @@ func validateStoredInboxURL(raw string) error {
 }
 
 // RemoteFollowerInboxesPage returns one stable lexical page of deduplicated
- // delivery endpoints. The cursor advances over raw destinations, including
- // invalid persisted URLs, so a bad row cannot stall or truncate fan-out.
+// delivery endpoints. The cursor advances over raw destinations, including
+// invalid persisted URLs, so a bad row cannot stall or truncate fan-out.
 func (s *Store) RemoteFollowerInboxesPage(ctx context.Context, localUserID, after string, limit int) ([]string, string, bool, error) {
 	localUserID = strings.TrimSpace(localUserID)
 	if localUserID == "" || len(localUserID) > 128 || len(after) > 2048 || limit < 1 || limit > 1000 {
