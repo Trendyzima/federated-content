@@ -139,9 +139,10 @@ paths:
       summary: Verify and durably accept a signed ActivityPub activity
       description: |
         Verifies the remote actor's HTTP Signature and key ownership, checks local
-        federation consent both before and after verification, persists remote actor
-        metadata, and durably deduplicates the activity in the inbox. Processing is
-        asynchronous; 202 means durable acceptance, not completed delivery or handling.
+        federation consent both before and after verification, and durably deduplicates
+        supported Follow/Undo activities. Other ActivityPub activity types return 422
+        until their Backend-authorized projections are implemented. Processing is
+        asynchronous; 202 means durable acceptance, not completed handling.
         Follow and Undo are the only inbound activities with active domain processing in the
         current release; other accepted types remain quarantined until their Backend-authorized
         projections are implemented. Public routing and worker activation are separate release gates.
@@ -168,7 +169,7 @@ paths:
                 id: {type: string, format: uri}
                 type:
                   type: string
-                  enum: [Follow, Undo, Create, Update, Delete, Like, Announce, Accept, Reject, Block]
+                  enum: [Follow, Undo]
                 actor: {type: string, format: uri}
                 object: {}
           application/ld+json:
