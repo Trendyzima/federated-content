@@ -87,3 +87,17 @@ func TestInternalActivityEndpointUsesDedicatedIngressCredential(t *testing.T) {
 		t.Fatalf("Federation ingress token status = %d, want %d", correctRec.Code, http.StatusServiceUnavailable)
 	}
 }
+
+func TestInternalActivityEndpointDoesNotFallbackToBackendReadCredential(t *testing.T) {
+	backendToken := strings.Repeat("b", 40)
+	cfg := config.Config{BackendInternalToken: backendToken}
+	handler := NewWithRuntime(cfg, slog.Default(), nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/activities", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+backendToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("reverse-direction credential status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
