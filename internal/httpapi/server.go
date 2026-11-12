@@ -270,10 +270,8 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_activity", "ActivityPub activity identity is invalid")
 		return
 	}
-	switch activity.Type {
-	case "Follow", "Undo", "Create", "Update", "Delete", "Like", "Announce", "Accept", "Reject", "Block":
-	default:
-		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "ActivityPub activity type is not supported")
+	if !supportedInboxActivityType(activity.Type) {
+		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "Only signed Follow and Undo activities are enabled for inbound processing")
 		return
 	}
 	// Recheck consent and account status after signature verification. This
@@ -306,6 +304,10 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", activity.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "duplicate": !inserted, "recipient": localActor.ActorURI})
+}
+
+func supportedInboxActivityType(activityType string) bool {
+	return activityType == "Follow" || activityType == "Undo"
 }
 
 func isActivityPubContentType(raw string) bool {
