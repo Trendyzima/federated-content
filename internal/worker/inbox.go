@@ -30,7 +30,7 @@ type InboxStore interface {
 type InboxBackend interface {
 	ResolveActor(context.Context, string) (backend.ActorProfile, error)
 	AcceptRemoteFollow(context.Context, string, string, string) error
-	RemoveRemoteFollow(context.Context, string, string, string) error
+	RemoveRemoteFollow(context.Context, string, string, string, string) error
 }
 
 type InboxWorker struct {
@@ -190,8 +190,12 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 			if !ok || target != localActor.ActorURI || original.ID == "" || !isHTTPSActivityID(original.ID) {
 				return permanentInbox("Undo activity references an invalid Follow")
 			}
+			originalID = original.ID
 		}
-		if err := w.backend.RemoveRemoteFollow(ctx, profile.UserID, item.ActorURI, activity.ID); err != nil {
+		if err := w.backend.RemoveRemoteFollow(ctx, profile.UserID, item.ActorURI, activity.ID, originalID); err != nil {
+			if errors.Is(err, backend.ErrRemoteFollowNotAuthorized) || errors.Is(err, backend.ErrRemoteFollowConflict) {
+				return permanentInbox("Backend rejected an unmatched or unauthorized remote Undo Follow")
+			}
 			return fmt.Errorf("remove canonical remote follow in Backend: %w", err)
 		}
 		if err := w.store.RemoveRemoteFollower(ctx, profile.UserID, item.ActorURI); err != nil {
