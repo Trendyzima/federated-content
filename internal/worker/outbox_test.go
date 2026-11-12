@@ -193,7 +193,7 @@ func TestOutboxPollerCreatesAndDurablyEnqueuesActivityPubPost(t *testing.T) {
 		t.Fatal(err)
 	}
 	if activity.Type != "Create" || activity.Actor != actor.ActorURI || activity.Object.Type != "Note" ||
-		activity.Object.ID != "https://testagram.site/posts/post_123" || activity.Object.Content != "Hello from Testagram" {
+		activity.Object.ID != "https://federation.testagram.site/objects/post_123" || activity.Object.Content != "Hello from Testagram" {
 		t.Fatalf("unexpected ActivityPub Create payload: %+v", activity)
 	}
 	wantCursor := base64.RawURLEncoding.EncodeToString([]byte(event.ID))
