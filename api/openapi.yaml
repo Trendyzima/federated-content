@@ -91,6 +91,51 @@ paths:
                 type: object
         "404":
           description: Actor not found
+  /users/{username}/followers:
+    get:
+      operationId: getFollowers
+      summary: Fetch the public remote followers collection for a local actor
+      description: Returns a bounded, cursor-paginated ActivityPub OrderedCollection. The collection contains verified remote actor URIs only; actor eligibility is rechecked through the private Backend before it is exposed.
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Set true to request an OrderedCollectionPage.
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+          description: Opaque base64url cursor returned by the previous page.
+        - in: header
+          name: Accept
+          required: true
+          schema:
+            type: string
+            example: application/activity+json
+      responses:
+        "200":
+          description: Public remote followers OrderedCollection or page.
+          content:
+            application/activity+json:
+              schema:
+                type: object
+        "400":
+          description: Invalid followers page cursor.
+        "404":
+          description: Local actor not found or federation disabled.
+        "406":
+          description: ActivityPub Accept header required.
+        "503":
+          description: Federation storage or Backend actor lookup unavailable.
   /objects/{post_id}:
     get:
       operationId: getPublicObject
