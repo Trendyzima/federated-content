@@ -147,7 +147,7 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 			return permanentInbox("Follow activity targets a different local actor")
 		}
 		if err := w.backend.AcceptRemoteFollow(ctx, profile.UserID, item.ActorURI, item.ActivityID); err != nil {
-			if errors.Is(err, backend.ErrRemoteFollowNotAuthorized) {
+			if errors.Is(err, backend.ErrRemoteFollowNotAuthorized) || errors.Is(err, backend.ErrRemoteFollowConflict) {
 				return permanentInbox("Backend rejected the remote follow or local account is no longer eligible")
 			}
 			return fmt.Errorf("authorize remote follow in Backend: %w", err)
