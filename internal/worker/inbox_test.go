@@ -74,10 +74,10 @@ func (f *fakeInboxStore) EnqueueOutbox(_ context.Context, id, actor string, payl
 type fakeInboxBackend struct {
 	profile          backend.ActorProfile
 	err              error
-	acceptErr         error
-	removeErr         error
-	accepted          []string
-	removedByBackend  []string
+	acceptErr        error
+	removeErr        error
+	accepted         []string
+	removedByBackend []string
 }
 
 func (f *fakeInboxBackend) ResolveActor(context.Context, string) (backend.ActorProfile, error) {
@@ -193,7 +193,7 @@ func TestInboxWorkerQuarantinesFollowRejectedByBackend(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/follow-denied", "type": "Follow", "actor": actorURI, "object": "https://federation.testagram.site/users/alice"})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/follow-denied", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Follow", Payload: payload, LeaseToken: "lease-denied"}}}
 	backendClient := &fakeInboxBackend{
-		profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true},
+		profile:   backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true},
 		acceptErr: backend.ErrRemoteFollowNotAuthorized,
 	}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
@@ -213,7 +213,7 @@ func TestInboxWorkerRetriesFollowWhenBackendCanonicalWriteFails(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"id": "https://remote.example/activities/follow-retry", "type": "Follow", "actor": actorURI, "object": "https://federation.testagram.site/users/alice"})
 	state := &fakeInboxStore{items: []store.InboxActivity{{ActivityID: "https://remote.example/activities/follow-retry", ActorURI: actorURI, RecipientUsername: "alice", ActivityType: "Follow", Payload: payload, LeaseToken: "lease-retry"}}}
 	backendClient := &fakeInboxBackend{
-		profile: backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true},
+		profile:   backend.ActorProfile{UserID: "user_123", Handle: "alice", FederationEnabled: true},
 		acceptErr: errors.New("Backend database unavailable"),
 	}
 	count, err := testInboxWorker(state, backendClient).ProcessBatch(context.Background())
