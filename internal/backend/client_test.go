@@ -225,6 +225,13 @@ func TestRemoteUnfollowCallsBackendBeforeLocalRoutingRemoval(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/internal/v1/federation/remote-follows/undo" {
 			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
 		}
+		var input map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Error(err)
+		}
+		if input["follow_activity_id"] != "https://remote.example/activities/follow-1" {
+			t.Errorf("Undo did not carry original Follow ID: %#v", input)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"data":{"removed":true},"error":null,"request_id":"test"}`))
 	}))
