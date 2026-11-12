@@ -21,6 +21,7 @@ import (
 
 const backendOutboxCursorKey = "backend_outbox_v1"
 const backendOutboxBatchSize = 50
+const remoteFanoutPageSize = 500
 
 var safeActivityObjectID = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
@@ -34,7 +35,7 @@ type OutboxStore interface {
 	SyncCursor(context.Context, string) (string, error)
 	SaveSyncCursor(context.Context, string, string) error
 	EnsureActor(context.Context, string, string, string, string, string) (store.Actor, error)
-	RemoteFollowerInboxes(context.Context, string, int) ([]string, error)
+	RemoteFollowerInboxesPage(context.Context, string, string, int) ([]string, string, bool, error)
 	EnqueueOutbox(context.Context, string, string, []byte, []string) error
 }
 
@@ -203,12 +204,29 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 	if err != nil {
 		return fmt.Errorf("encode ActivityPub Create activity: %w", err)
 	}
-	inboxes, err := w.store.RemoteFollowerInboxes(ctx, event.ActorID, 1000)
-	if err != nil {
-		return fmt.Errorf("load remote follower inboxes: %w", err)
-	}
-	if err := w.store.EnqueueOutbox(ctx, activityID, actor.ActorURI, encoded, inboxes); err != nil {
-		return fmt.Errorf("durably enqueue ActivityPub activity: %w", err)
+	// Persist the activity and every delivery page before advancing the
+	// Backend cursor. EnqueueOutbox is idempotent, so a crash midway through
+	// fan-out safely replays earlier pages without duplicating delivery jobs.
+	afterInbox := ""
+	firstPage := true
+	for {
+		inboxes, nextInbox, hasMore, err := w.store.RemoteFollowerInboxesPage(ctx, event.ActorID, afterInbox, remoteFanoutPageSize)
+		if err != nil {
+			return fmt.Errorf("load remote follower inbox page: %w", err)
+		}
+		if firstPage || len(inboxes) > 0 {
+			if err := w.store.EnqueueOutbox(ctx, activityID, actor.ActorURI, encoded, inboxes); err != nil {
+				return fmt.Errorf("durably enqueue ActivityPub delivery page: %w", err)
+			}
+		}
+		firstPage = false
+		if !hasMore {
+			break
+		}
+		if nextInbox == "" || nextInbox <= afterInbox {
+			return errors.New("remote follower fan-out cursor did not advance")
+		}
+		afterInbox = nextInbox
 	}
 	return nil
 }
