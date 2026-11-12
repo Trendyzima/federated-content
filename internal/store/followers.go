@@ -111,7 +111,6 @@ func (s *Store) RemoteFollowerInboxesPage(ctx context.Context, localUserID, afte
 	return inboxes, next, hasMore, nil
 }
 
-
 // RemoteFollowerCount returns the public remote-follower count for one
 // Backend-verified local actor.
 func (s *Store) RemoteFollowerCount(ctx context.Context, localUserID string) (int, error) {
