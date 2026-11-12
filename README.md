@@ -1,20 +1,24 @@
 # Testagram Federated Content
 
-The ActivityPub protocol service for the five-repository Testagram platform.
+The ActivityPub protocol service for Testagram's six runtime repositories, coordinated by the separate API contract control plane.
 
-## Five-repository ownership
+## Six runtime repositories + API contract control plane
 
 | Repository | Owns | Must not own |
 | --- | --- | --- |
-| [Testagram Flutter Client](https://github.com/Trendyzima/testagram-flutter-client-) | Web/mobile UI, client-side presentation and user interactions | Canonical identity, permissions, federation delivery or media durability |
-| [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-) | Appwrite identity verification and account mapping; canonical profiles, posts, follows, blocks, visibility, authorization, transactional events and API orchestration in Neon PostgreSQL | ActivityPub protocol execution or ranking policy |
-| **Federated Content (this repository)** | WebFinger, ActivityPub actor documents, remote actor/key discovery, signed inbox ingress, protocol outbox, delivery state and federation workers | Canonical Testagram users/posts, account permissions or media ownership |
-| [the-algorithm](https://github.com/Trendyzima/the-algorithm) | Candidate ranking, recommendation and discovery scoring | Canonical feed authorization, visibility or social graph |
-| [Testagram Data Centre](https://github.com/Trendyzima/Testagram-data-centre-) | Deployment, private networking, PostgreSQL operations, B2/R2 media durability, storage nodes, backups and recovery | Product identity or social application policy |
+| [Testagram Flutter Client](https://github.com/Trendyzima/testagram-flutter-client-) | Native web/mobile UI, presentation and user interactions | Canonical identity, permissions, federation delivery or media durability |
+| [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-) | Appwrite identity verification; canonical profiles, posts, follows, blocks, visibility, authorization and public API | ActivityPub protocol execution or ranking policy |
+| **Federated Content (this repository)** | WebFinger, ActivityPub actors/keys, remote actor cache, signed inbox, protocol outbox and delivery workers | Canonical Testagram users/posts, permissions or media ownership |
+| [Testagram Data Centre](https://github.com/Trendyzima/Testagram-data-centre-) | Federation runtime deployment, private networking, PostgreSQL operations, backups and recovery | Product identity or social application policy |
+| [Testagram CDN](https://github.com/Trendyzima/cdn-) | Approved media byte delivery, edge caching and range/HLS transport | Product visibility, media ownership or federation authorization |
+| [the-algorithm](https://github.com/Trendyzima/the-algorithm) | Optional ranking of Backend-authorized local/remote candidates | Candidate authorization, visibility or social graph |
+| [testagram-api](https://github.com/Trendyzima/testagram-api) | OpenAPI, private contracts, event schemas, SDKs, source pins and cross-repository compatibility CI; not a runtime service | Product data, runtime requests or service authorization |
 
-The request path is:
+The runtime request path is:
 
-`Testagram Flutter Client → Testagram Backend → private service APIs/events → Federation / Algorithm / Data Centre`
+`Testagram Flutter Client → Testagram Backend → private service APIs/events → Federation / Algorithm / Data Centre / CDN`
+
+`testagram-api` is the contract control plane only; it is not in the runtime request path.
 
 Only the Testagram Flutter Client talks to users. Backend remains the authority for identity, post state, authorization, visibility, social graph and media ownership. The ranker returns ordering only; Backend must re-check access and hydrate canonical post data. Federation stores protocol state and must resolve local actors through Backend. Data Centre supplies infrastructure and durable media storage.
 
@@ -46,7 +50,7 @@ The database stores accepted inbox activities and delivery jobs. The signed deli
 ## Service contract
 
 - Public ActivityPub ingress and discovery terminate at this service, not at the Flutter client or the public Backend API.
-- Federation-to-Backend calls use `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN` on a private network. The token must be at least 32 characters and must match the Backend's Federation service token. Readiness calls the private `GET /internal/v1/federation/readyz` endpoint with that token; it deliberately does not depend on Algorithm's public home-feed readiness.
+- Federation-to-Backend calls use `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN` on a private network; this value is the Backend's `FEDERATION_BACKEND_INTERNAL_TOKEN`. Backend-to-Federation ingress uses the separate `FEDERATION_INGRESS_TOKEN`, mapped from Backend's `FEDERATION_INTERNAL_TOKEN`. Both secrets must be independently generated and at least 32 characters. Never reuse either directional credential. Readiness calls the private `GET /internal/v1/federation/readyz` endpoint with the Federation-to-Backend credential.
 - Backend owns the local-user lookup and eligibility decision. Federation must not create or infer local accounts from usernames.
 - Backend owns post visibility and permissions. Federation may persist remote protocol records but cannot grant local access.
 - Activity delivery is asynchronous. Local publishing must not fail merely because a remote instance is unavailable.
@@ -73,7 +77,7 @@ The HTTP service listens on `:8081` by default.
 | `GET /users/{username}/outbox` | Persisted ActivityPub outbox collection |
 | `POST /users/{username}/inbox` | Verify and durably accept a signed activity; returns 202 only after persistence |
 
-For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATION_DATABASE_URL`, `BACKEND_INTERNAL_URL` and `BACKEND_INTERNAL_TOKEN`. The outbound delivery worker is disabled by default; only set `FEDERATION_DELIVERY_WORKER_ENABLED=true` in an isolated environment after creating test delivery jobs. Do not put the private service token in a frontend, mobile bundle, public workflow log or browser request.
+For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATION_DATABASE_URL`, `BACKEND_INTERNAL_URL`, `BACKEND_INTERNAL_TOKEN` and `FEDERATION_INGRESS_TOKEN` with distinct values. The outbound delivery worker is disabled by default; only set `FEDERATION_DELIVERY_WORKER_ENABLED=true` in an isolated environment after creating test delivery jobs. Do not put the private service token in a frontend, mobile bundle, public workflow log or browser request.
 
 ## Security and reliability requirements
 
@@ -102,3 +106,5 @@ For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATI
 - [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-)
 - [the-algorithm](https://github.com/Trendyzima/the-algorithm)
 - [Testagram Data Centre](https://github.com/Trendyzima/Testagram-data-centre-)
+- [Testagram CDN](https://github.com/Trendyzima/cdn-)
+- [Testagram API contract control plane](https://github.com/Trendyzima/testagram-api)
