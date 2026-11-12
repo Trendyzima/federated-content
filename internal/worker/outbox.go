@@ -200,7 +200,7 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 			"published":   event.CreatedAt,
 			"to":          []string{"https://www.w3.org/ns/activitystreams#Public"},
 			"cc":          []string{actor.ActorURI + "/followers"},
-		}
+		},
 	}
 	encoded, err := json.Marshal(activity)
 	if err != nil {
