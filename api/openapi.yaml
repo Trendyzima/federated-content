@@ -2,7 +2,10 @@ openapi: 3.1.0
 info:
   title: Testagram Federated Content API
   version: 0.1.0
-  description: Public ActivityPub discovery and actor endpoints. Inbox ingestion is disabled in this release.
+  description: >
+    Public ActivityPub discovery, actor, outbox and signed inbox endpoints. Route registration
+    does not imply production public exposure or worker activation; those remain gated by
+    interoperability, security, operational recovery and explicit deployment approval.
 servers:
   - url: https://federation.testagram.site
 paths:
@@ -19,7 +22,9 @@ paths:
       summary: Service readiness
       responses:
         "200":
-          description: Ready; the initial release has no external dependencies
+          description: Federation PostgreSQL and the private Backend identity dependency are healthy.
+        "503":
+          description: Federation storage or the private Backend dependency is unavailable.
   /.well-known/webfinger:
     get:
       operationId: webfinger
@@ -70,7 +75,7 @@ paths:
   /users/{username}/outbox:
     get:
       operationId: getOutbox
-      summary: Fetch the configured actor's empty initial outbox
+      summary: Fetch the configured actor's persisted ActivityPub outbox
       parameters:
         - in: path
           name: username
@@ -79,7 +84,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Empty OrderedCollection
+          description: Persisted ActivityPub OrderedCollection; it may be empty when the actor has not published federated activities.
           content:
             application/activity+json:
               schema:
@@ -95,6 +100,9 @@ paths:
         federation consent both before and after verification, persists remote actor
         metadata, and durably deduplicates the activity in the inbox. Processing is
         asynchronous; 202 means durable acceptance, not completed delivery or handling.
+        Follow and Undo are the only inbound activities with active domain processing in the
+        current release; other accepted types remain quarantined until their Backend-authorized
+        projections are implemented. Public routing and worker activation are separate release gates.
       parameters:
         - in: path
           name: username
