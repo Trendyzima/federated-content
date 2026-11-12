@@ -196,25 +196,30 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 }
 
 func (c *Client) AcceptRemoteFollow(ctx context.Context, localUserID, remoteActorURI, activityID string) error {
-	return c.changeRemoteFollow(ctx, "/internal/v1/federation/remote-follows", localUserID, remoteActorURI, activityID, true)
+	return c.changeRemoteFollow(ctx, "/internal/v1/federation/remote-follows", localUserID, remoteActorURI, activityID, "", true)
 }
 
-func (c *Client) RemoveRemoteFollow(ctx context.Context, localUserID, remoteActorURI, activityID string) error {
-	return c.changeRemoteFollow(ctx, "/internal/v1/federation/remote-follows/undo", localUserID, remoteActorURI, activityID, false)
+func (c *Client) RemoveRemoteFollow(ctx context.Context, localUserID, remoteActorURI, activityID, followActivityID string) error {
+	return c.changeRemoteFollow(ctx, "/internal/v1/federation/remote-follows/undo", localUserID, remoteActorURI, activityID, followActivityID, false)
 }
 
-func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remoteActorURI, activityID string, accepting bool) error {
+func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remoteActorURI, activityID, followActivityID string, accepting bool) error {
 	localUserID = strings.TrimSpace(localUserID)
 	remoteActorURI = strings.TrimSpace(remoteActorURI)
 	activityID = strings.TrimSpace(activityID)
-	if localUserID == "" || len(localUserID) > 36 || !isHTTPSActorURI(remoteActorURI) || !isHTTPSActorURI(activityID) {
+	followActivityID = strings.TrimSpace(followActivityID)
+	if localUserID == "" || len(localUserID) > 36 || !isHTTPSActorURI(remoteActorURI) || !isHTTPSActorURI(activityID) || (!accepting && !isHTTPSActorURI(followActivityID)) {
 		return errors.New("remote follow identity is invalid")
 	}
-	body, err := json.Marshal(map[string]string{
+	requestBody := map[string]string{
 		"local_user_id": localUserID,
 		"remote_actor_uri": remoteActorURI,
 		"activity_id": activityID,
-	})
+	}
+	if followActivityID != "" {
+		requestBody["follow_activity_id"] = followActivityID
+	}
+	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return err
 	}
@@ -241,6 +246,9 @@ func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remo
 	}
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
 		return ErrRemoteFollowNotAuthorized
+	}
+	if resp.StatusCode == http.StatusConflict {
+		return ErrRemoteFollowConflict
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("Backend remote follow update returned HTTP %d", resp.StatusCode)
@@ -305,3 +313,4 @@ func newRequestID() string {
 
 var ErrActorNotFound = errors.New("local actor not found")
 var ErrRemoteFollowNotAuthorized = errors.New("Backend did not authorize the remote follow")
+var ErrRemoteFollowConflict = errors.New("Backend rejected conflicting remote follow activity identity")
