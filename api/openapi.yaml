@@ -91,6 +91,48 @@ paths:
                 type: object
         "404":
           description: Actor not found
+  /objects/{post_id}:
+    get:
+      operationId: getPublicObject
+      summary: Resolve a canonical public Testagram post as an ActivityPub Note
+      parameters:
+        - in: path
+          name: post_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: Accept
+          required: true
+          schema:
+            type: string
+            example: application/activity+json
+      responses:
+        "200":
+          description: Canonical public ActivityPub Note resolved through Backend.
+          content:
+            application/activity+json:
+              schema:
+                type: object
+                required: [id, type, attributedTo, content, mediaType, published, to]
+                properties:
+                  "@context": { type: string }
+                  id: { type: string, format: uri }
+                  type: { type: string, const: Note }
+                  attributedTo: { type: string, format: uri }
+                  content: { type: string }
+                  mediaType: { type: string, const: text/html }
+                  published: { type: string, format: date-time }
+                  to:
+                    type: array
+                    items: { type: string, format: uri }
+        "404":
+          description: Post is missing, private, deleted, protected or no longer federation-eligible.
+        "406":
+          description: ActivityPub Accept header required
+        "503":
+          description: Private Backend object resolution is unavailable
   /users/{username}/inbox:
     post:
       operationId: receiveActivity
