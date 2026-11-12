@@ -24,7 +24,10 @@ func TestInternalActivityEndpointRejectsMissingServiceCredential(t *testing.T) {
 
 func TestInternalActivityEndpointRequiresRuntimeAfterAuthentication(t *testing.T) {
 	token := strings.Repeat("s", 40)
-	cfg := config.Config{BackendInternalToken: token}
+	cfg := config.Config{
+		BackendInternalToken:   strings.Repeat("b", 40),
+		FederationIngressToken: token,
+	}
 	handler := NewWithRuntime(cfg, slog.Default(), nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/activities", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
