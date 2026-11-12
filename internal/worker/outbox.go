@@ -25,6 +25,30 @@ const remoteFanoutPageSize = 500
 
 var safeActivityObjectID = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
+var activityPubHashtagPattern = regexp.MustCompile("(^|[^\\p{L}\\p{N}_])#([\\p{L}\\p{N}_]{1,64})")
+
+func activityPubHashtagTags(content string) []map[string]string {
+	matches := activityPubHashtagPattern.FindAllStringSubmatch(content, -1)
+	seen := make(map[string]struct{}, len(matches))
+	tags := make([]map[string]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		normalized := strings.ToLower(match[2])
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		tags = append(tags, map[string]string{
+			"type": "Hashtag",
+			"href": "https://testagram.site/hashtag/" + url.PathEscape(normalized),
+			"name": "#" + match[2],
+		})
+	}
+	return tags
+}
+
 type OutboxSource interface {
 	ListOutbox(context.Context, string, int) (backend.OutboxPage, error)
 	ResolveActorByID(context.Context, string) (backend.ActorProfile, error)
@@ -182,6 +206,20 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 
 	activityID := actorURI + "/activities/" + url.PathEscape(event.ID)
 	objectURL := w.publicBaseURL + "/objects/" + url.PathEscape(event.ObjectID)
+	note := map[string]any{
+		"@context":     "https://www.w3.org/ns/activitystreams",
+		"id":           objectURL,
+		"type":         "Note",
+		"attributedTo": actor.ActorURI,
+		"content":      strings.ReplaceAll(html.EscapeString(payload.Content), "\n", "<br />"),
+		"mediaType":    "text/html",
+		"published":    event.CreatedAt,
+		"to":           []string{"https://www.w3.org/ns/activitystreams#Public"},
+		"cc":           []string{actor.ActorURI + "/followers"},
+	}
+	if tags := activityPubHashtagTags(payload.Content); len(tags) > 0 {
+		note["tag"] = tags
+	}
 	activity := map[string]any{
 		"@context":  "https://www.w3.org/ns/activitystreams",
 		"id":        activityID,
@@ -190,17 +228,7 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 		"published": event.CreatedAt,
 		"to":        []string{"https://www.w3.org/ns/activitystreams#Public"},
 		"cc":        []string{actor.ActorURI + "/followers"},
-		"object": map[string]any{
-			"@context":     "https://www.w3.org/ns/activitystreams",
-			"id":           objectURL,
-			"type":         "Note",
-			"attributedTo": actor.ActorURI,
-			"content":      strings.ReplaceAll(html.EscapeString(payload.Content), "\n", "<br />"),
-			"mediaType":    "text/html",
-			"published":    event.CreatedAt,
-			"to":           []string{"https://www.w3.org/ns/activitystreams#Public"},
-			"cc":           []string{actor.ActorURI + "/followers"},
-		},
+		"object":    note,
 	}
 	encoded, err := json.Marshal(activity)
 	if err != nil {
