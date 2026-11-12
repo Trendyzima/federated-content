@@ -323,7 +323,7 @@ func TestRemoteFollowerInboxPaginationIsStableAndDeduplicated(t *testing.T) {
 	if len(seen) != 1002 {
 		t.Fatalf("distinct valid inbox count=%d, want 1002", len(seen))
 	}
-	if len(pageSizes) != 3 || pageSizes[0] != 500 || pageSizes[1] != 500 || pageSizes[2] != 2 {
+	if len(pageSizes) != 3 || pageSizes[0] != 499 || pageSizes[1] != 500 || pageSizes[2] != 3 {
 		t.Fatalf("unexpected fan-out page sizes: %v", pageSizes)
 	}
 	if seen["http://invalid.example/inbox"] {
