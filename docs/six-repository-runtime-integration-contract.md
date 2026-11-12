@@ -1,9 +1,9 @@
-# Testagram six-repository runtime integration contract
+# Testagram six-runtime-repository integration contract
 
 Status: implementation and staging contract; not production cutover authorization.
 Reviewed: 2026-11-11.
 
-This is the shared communication contract for the six retained Testagram repositories. Each repository owns its domain; no repository may bypass the Backend's product authorization or become a second source of truth.
+This is the shared communication contract for six runtime repositories. The separate `testagram-api` repository governs contracts and compatibility but is not a runtime service. Each runtime repository owns its domain; no repository may bypass the Backend's product authorization or become a second source of truth.
 
 ## Service ownership
 
@@ -15,6 +15,7 @@ This is the shared communication contract for the six retained Testagram reposit
 | `cdn-` | Media/HLS/DASH delivery, cache, origin/shield routing, range handling and playback-token validation | Public media requests and configured private/public origins; no product authorization |
 | `federated-content` | ActivityPub actors, keys, inbox/outbox, signature verification, remote delivery and federation state | Private Backend actor/outbox APIs; remote ActivityPub peers |
 | `the-algorithm` | Stateless feed ordering over an already-authorized bounded candidate set | Private Backend ranking API only |
+| `testagram-api` (control plane; not a runtime) | OpenAPI, schemas, SDKs, pinned provider snapshots and cross-repository compatibility CI | No runtime requests, product data, service credentials or authorization decisions |
 
 ## Canonical request paths
 
@@ -36,7 +37,7 @@ This is the shared communication contract for the six retained Testagram reposit
 - Backend publishes authorized activities to Federation at `POST /internal/v1/activities`.
 - Publish request fields are `activity_id`, `actor_user_id`, and `activity`; duplicate activity IDs must be idempotent.
 - Backend post transaction and outbox event must commit atomically. The dispatcher retries bounded batches and acknowledges only after durable Federation acceptance.
-- Use separate credentials in each direction: `FEDERATION_INTERNAL_TOKEN` authenticates Backend -> Federation; `FEDERATION_BACKEND_INTERNAL_TOKEN` authenticates Federation -> Backend. Never reuse Appwrite user JWTs as service credentials.
+- Use separate credentials in each direction: Backend's `FEDERATION_INTERNAL_TOKEN` is mapped to Federation's `FEDERATION_INGRESS_TOKEN` for Backend -> Federation; Backend's `FEDERATION_BACKEND_INTERNAL_TOKEN` is mapped to Federation's `BACKEND_INTERNAL_TOKEN` for Federation -> Backend. Generate independent values; no legacy shared-token fallback is permitted. Never reuse Appwrite user JWTs as service credentials.
 - Federation delivery, inbox and outbox polling remain disabled until signature, consent, replay, durability, idempotency and interoperability gates pass.
 
 ### Backend -> Data Centre
@@ -50,6 +51,11 @@ This is the shared communication contract for the six retained Testagram reposit
 - The Go CDN supports the stable `/v1/` media path and HLS/DASH paths. Configure `MEDIA_PUBLIC_BASE_URL=https://media.testagram.site/v1` only when DNS, TLS, CDN routing and the CDN origin are actually configured for that hostname and path.
 - CDN is a delivery plane, not an authorization authority. Private objects require a key-bound, expiring playback token or an authenticated origin path; never mark private objects public or cache private responses as public.
 - HLS playlists are short-lived; segments need cache lifetimes consistent with the playlist window. Range requests and content type must be preserved.
+
+### API contract control plane (`testagram-api`)
+- The API repository owns public/private OpenAPI contracts, event schemas, SDKs, provider source pins and cross-repository contract CI. It is not a gateway, service runtime, identity authority or database owner.
+- Federation provider OpenAPI and event snapshots must match the exact immutable Federation source commit recorded in `contracts/sources.lock.json`.
+- Public inbox route registration is distinct from public routing and worker activation. Keep deployment gates explicit in both provider docs and API snapshots.
 
 ## Shared reliability and security rules
 - JSON over HTTP(S); use HTTPS for public endpoints and private-network HTTP only for explicitly private service hostnames.
