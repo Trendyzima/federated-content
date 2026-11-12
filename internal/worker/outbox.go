@@ -181,7 +181,7 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 	}
 
 	activityID := actorURI + "/activities/" + url.PathEscape(event.ID)
-	objectURL := (&url.URL{Scheme: "https", Host: w.instanceDomain, Path: "/posts/" + event.ObjectID}).String()
+	objectURL := w.publicBaseURL + "/objects/" + url.PathEscape(event.ObjectID)
 	activity := map[string]any{
 		"@context":  "https://www.w3.org/ns/activitystreams",
 		"id":        activityID,
