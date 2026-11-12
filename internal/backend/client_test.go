@@ -287,3 +287,25 @@ func TestGetPublicObjectMapsBackendNotFound(t *testing.T) {
 		t.Fatalf("error = %v, want ErrObjectNotFound", err)
 	}
 }
+
+func TestGetPublicObjectRejectsNonCanonicalPostIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("invalid post ID reached Backend")
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, strings.Repeat("t", 40), server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, postID := range []string{
+		"123e4567-e89b-42d3-a456-426614174001suffix",
+		"123e4567-e89b-42d3-a456-426614174001/../../private",
+		"123e4567-e89b-42d3-a456-42661417400",
+		"not-a-uuid",
+	} {
+		if _, err := client.GetPublicObject(context.Background(), postID); err == nil {
+			t.Errorf("GetPublicObject(%q) accepted a non-canonical ID", postID)
+		}
+	}
+}
