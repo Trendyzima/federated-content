@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,7 +110,7 @@ func validBackendOutboxFixture(t *testing.T) (backend.OutboxEvent, backend.Actor
 		AuthorID:         "user_123",
 		ActorHandle:      "alice",
 		ActorDisplayName: "Alice",
-		Content:          "Hello from Testagram",
+		Content:          "Hello from Testagram #Fediverse #ActivityPub #fediverse",
 		Visibility:       "public",
 		CreatedAt:        now,
 	})
@@ -163,6 +164,23 @@ func newOutboxFixture(t *testing.T, event backend.OutboxEvent, profile backend.A
 	return poller, source, state
 }
 
+func TestActivityPubHashtagTagsNormalizeAndDeduplicate(t *testing.T) {
+	tags := activityPubHashtagTags("Start #Mastodon #mastodon #Kiswahili #東京")
+	if len(tags) != 3 {
+		t.Fatalf("got %d hashtag tags, want 3: %#v", len(tags), tags)
+	}
+	names := map[string]bool{}
+	for _, tag := range tags {
+		if tag["type"] != "Hashtag" || !strings.HasPrefix(tag["href"], "https://testagram.site/hashtag/") {
+			t.Fatalf("invalid ActivityPub hashtag: %#v", tag)
+		}
+		names[tag["name"]] = true
+	}
+	if !names["#Mastodon"] || !names["#Kiswahili"] || !names["#東京"] {
+		t.Fatalf("Unicode or case-preserved tags missing: %#v", names)
+	}
+}
+
 func TestOutboxPollerCreatesAndDurablyEnqueuesActivityPubPost(t *testing.T) {
 	event, profile, actor := validBackendOutboxFixture(t)
 	poller, source, state := newOutboxFixture(t, event, profile, actor)
@@ -187,14 +205,29 @@ func TestOutboxPollerCreatesAndDurablyEnqueuesActivityPubPost(t *testing.T) {
 			ID      string `json:"id"`
 			Type    string `json:"type"`
 			Content string `json:"content"`
+			Tag     []struct {
+				Type string `json:"type"`
+				Href string `json:"href"`
+				Name string `json:"name"`
+			} `json:"tag"`
 		} `json:"object"`
 	}
 	if err := json.Unmarshal(state.enqueuedPayload, &activity); err != nil {
 		t.Fatal(err)
 	}
 	if activity.Type != "Create" || activity.Actor != actor.ActorURI || activity.Object.Type != "Note" ||
-		activity.Object.ID != "https://federation.testagram.site/objects/post_123" || activity.Object.Content != "Hello from Testagram" {
+		activity.Object.ID != "https://federation.testagram.site/objects/post_123" || activity.Object.Content != "Hello from Testagram #Fediverse #ActivityPub #fediverse" || len(activity.Object.Tag) != 2 {
 		t.Fatalf("unexpected ActivityPub Create payload: %+v", activity)
+	}
+	seenTags := map[string]bool{}
+	for _, tag := range activity.Object.Tag {
+		if tag.Type != "Hashtag" || !strings.HasPrefix(tag.Href, "https://testagram.site/hashtag/") {
+			t.Fatalf("invalid ActivityPub hashtag metadata: %+v", tag)
+		}
+		seenTags[tag.Name] = true
+	}
+	if !seenTags["#Fediverse"] || !seenTags["#ActivityPub"] {
+		t.Fatalf("expected structured hashtag tags, got %+v", activity.Object.Tag)
 	}
 	wantCursor := base64.RawURLEncoding.EncodeToString([]byte(event.ID))
 	if state.cursor != wantCursor || len(state.saved) != 1 {
