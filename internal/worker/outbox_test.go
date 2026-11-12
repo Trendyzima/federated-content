@@ -39,6 +39,9 @@ type fakeOutboxStore struct {
 	saved           []string
 	actor           store.Actor
 	inboxes         []string
+	inboxPages      [][]string
+	pageCalls       int
+	enqueuedPages   [][]string
 	enqueuedID      string
 	enqueuedActor   string
 	enqueuedPayload []byte
@@ -69,14 +72,32 @@ func (f *fakeOutboxStore) EnsureActor(_ context.Context, userID, username, actor
 	return f.actor, nil
 }
 
-func (f *fakeOutboxStore) RemoteFollowerInboxes(context.Context, string, int) ([]string, error) {
-	return f.inboxes, nil
+func (f *fakeOutboxStore) RemoteFollowerInboxesPage(_ context.Context, _ string, after string, limit int) ([]string, string, bool, error) {
+	if limit != remoteFanoutPageSize {
+		return nil, "", false, errors.New("unexpected fan-out page size")
+	}
+	pages := f.inboxPages
+	if len(pages) == 0 {
+		pages = [][]string{f.inboxes}
+	}
+	if f.pageCalls >= len(pages) {
+		return nil, after, false, nil
+	}
+	page := pages[f.pageCalls]
+	f.pageCalls++
+	more := f.pageCalls < len(pages)
+	next := after
+	if more && len(page) > 0 {
+		next = page[len(page)-1]
+	}
+	return page, next, more, nil
 }
 
 func (f *fakeOutboxStore) EnqueueOutbox(_ context.Context, id, actor string, payload []byte, inboxes []string) error {
 	f.enqueuedID, f.enqueuedActor = id, actor
 	f.enqueuedPayload = append([]byte(nil), payload...)
-	f.enqueuedInboxes = append([]string(nil), inboxes...)
+	f.enqueuedInboxes = append(f.enqueuedInboxes, inboxes...)
+	f.enqueuedPages = append(f.enqueuedPages, append([]string(nil), inboxes...))
 	return f.enqueueErr
 }
 
@@ -223,5 +244,42 @@ func TestOutboxPollerDoesNotAdvanceCursorBeforeDurableEnqueue(t *testing.T) {
 	}
 	if state.cursor != "" || len(state.saved) != 0 {
 		t.Fatalf("cursor advanced before durable enqueue: %+v", state)
+	}
+}
+
+
+func TestOutboxPollerPaginatesAllRemoteFollowerInboxes(t *testing.T) {
+	event, profile, actor := validBackendOutboxFixture(t)
+	poller, _, state := newOutboxFixture(t, event, profile, actor)
+	state.inboxPages = [][]string{
+		{"https://remote-1.example/inbox", "https://remote-2.example/inbox"},
+		{"https://remote-3.example/inbox"},
+		{"https://remote-4.example/inbox"},
+	}
+	count, err := poller.ProcessBatch(context.Background())
+	if err != nil || count != 1 {
+		t.Fatalf("ProcessBatch count=%d err=%v", count, err)
+	}
+	if state.pageCalls != 3 || len(state.enqueuedPages) != 3 || len(state.enqueuedInboxes) != 4 {
+		t.Fatalf("fan-out was truncated: calls=%d pages=%d inboxes=%d", state.pageCalls, len(state.enqueuedPages), len(state.enqueuedInboxes))
+	}
+	if state.enqueuedInboxes[3] != "https://remote-4.example/inbox" {
+		t.Fatalf("last remote inbox was not enqueued: %#v", state.enqueuedInboxes)
+	}
+	if state.cursor != base64.RawURLEncoding.EncodeToString([]byte(event.ID)) {
+		t.Fatalf("Backend cursor advanced incorrectly after paginated fan-out: %q", state.cursor)
+	}
+}
+
+func TestOutboxPollerPersistsActivityWhenThereAreNoRemoteFollowers(t *testing.T) {
+	event, profile, actor := validBackendOutboxFixture(t)
+	poller, _, state := newOutboxFixture(t, event, profile, actor)
+	state.inboxes = nil
+	count, err := poller.ProcessBatch(context.Background())
+	if err != nil || count != 1 {
+		t.Fatalf("ProcessBatch count=%d err=%v", count, err)
+	}
+	if state.enqueuedID == "" || len(state.enqueuedPages) != 1 || len(state.enqueuedPages[0]) != 0 {
+		t.Fatalf("actor outbox activity was not persisted without followers: %+v", state)
 	}
 }
