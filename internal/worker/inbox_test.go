@@ -87,8 +87,8 @@ func (f *fakeInboxBackend) AcceptRemoteFollow(_ context.Context, userID, actorUR
 	f.accepted = append(f.accepted, userID+":"+actorURI+":"+activityID)
 	return f.acceptErr
 }
-func (f *fakeInboxBackend) RemoveRemoteFollow(_ context.Context, userID, actorURI, activityID string) error {
-	f.removedByBackend = append(f.removedByBackend, userID+":"+actorURI+":"+activityID)
+func (f *fakeInboxBackend) RemoveRemoteFollow(_ context.Context, userID, actorURI, activityID, followActivityID string) error {
+	f.removedByBackend = append(f.removedByBackend, userID+":"+actorURI+":"+activityID+":"+followActivityID)
 	return f.removeErr
 }
 
@@ -149,7 +149,7 @@ func TestInboxWorkerProcessesUndoFollow(t *testing.T) {
 	if len(state.removed) != 1 || state.removed[0] != "user_123:"+actorURI {
 		t.Fatalf("Undo did not remove the remote follower: %#v", state.removed)
 	}
-	if len(backendClient.removedByBackend) != 1 || backendClient.removedByBackend[0] != "user_123:"+actorURI+":https://remote.example/activities/undo-1" {
+	if len(backendClient.removedByBackend) != 1 || backendClient.removedByBackend[0] != "user_123:"+actorURI+":https://remote.example/activities/undo-1:https://remote.example/activities/follow-1" {
 		t.Fatalf("Undo was not applied to Backend canonical social graph: %#v", backendClient.removedByBackend)
 	}
 	if len(state.acked) != 1 || len(state.failed) != 0 {
