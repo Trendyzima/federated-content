@@ -123,20 +123,22 @@ func TestInboxFailsClosed(t *testing.T) {
 }
 
 func TestFollowersRequiresActivityPubAccept(t *testing.T) {
- rec:=httptest.NewRecorder()
- req:=httptest.NewRequest(http.MethodGet,"/users/alice/followers",nil)
- testServer().ServeHTTP(rec,req)
- if rec.Code!=http.StatusNotAcceptable { t.Fatalf("expected 406 for non-ActivityPub followers request, got %d %s",rec.Code,rec.Body.String()) }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/users/alice/followers", nil)
+	testServer().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotAcceptable {
+		t.Fatalf("expected 406 for non-ActivityPub followers request, got %d %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestFollowersFailClosedWithoutDurableRuntime(t *testing.T) {
- rec:=httptest.NewRecorder()
- req:=httptest.NewRequest(http.MethodGet,"/users/alice/followers",nil)
- req.Header.Set("Accept",activityJSON)
- testServer().ServeHTTP(rec,req)
- if rec.Code!=http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(),"followers_unavailable") {
-  t.Fatalf("expected fail-closed 503 without durable Federation runtime, got %d %s",rec.Code,rec.Body.String())
- }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/users/alice/followers", nil)
+	req.Header.Set("Accept", activityJSON)
+	testServer().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "followers_unavailable") {
+		t.Fatalf("expected fail-closed 503 without durable Federation runtime, got %d %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestObjectRequiresActivityPubAccept(t *testing.T) {
