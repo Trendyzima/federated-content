@@ -168,3 +168,16 @@ func TestObjectReturnsCanonicalBackendNote(t *testing.T) {
 		t.Fatalf("expected ActivityPub content type, got %q", rec.Header().Get("Content-Type"))
 	}
 }
+
+func TestSupportedInboxActivityTypeIsLimitedToImplementedProjections(t *testing.T) {
+	for _, activityType := range []string{"Follow", "Undo"} {
+		if !supportedInboxActivityType(activityType) {
+			t.Errorf("implemented inbound activity %q was rejected", activityType)
+		}
+	}
+	for _, activityType := range []string{"Create", "Update", "Delete", "Like", "Announce", "Accept", "Reject", "Block"} {
+		if supportedInboxActivityType(activityType) {
+			t.Errorf("unimplemented inbound activity %q was accepted", activityType)
+		}
+	}
+}
