@@ -247,7 +247,6 @@ func TestOutboxPollerDoesNotAdvanceCursorBeforeDurableEnqueue(t *testing.T) {
 	}
 }
 
-
 func TestOutboxPollerPaginatesAllRemoteFollowerInboxes(t *testing.T) {
 	event, profile, actor := validBackendOutboxFixture(t)
 	poller, _, state := newOutboxFixture(t, event, profile, actor)
