@@ -164,6 +164,23 @@ func newOutboxFixture(t *testing.T, event backend.OutboxEvent, profile backend.A
 	return poller, source, state
 }
 
+func TestActivityPubHashtagTagsNormalizeAndDeduplicate(t *testing.T) {
+	tags := activityPubHashtagTags("Start #Mastodon #mastodon #Kiswahili #東京")
+	if len(tags) != 3 {
+		t.Fatalf("got %d hashtag tags, want 3: %#v", len(tags), tags)
+	}
+	names := map[string]bool{}
+	for _, tag := range tags {
+		if tag["type"] != "Hashtag" || !strings.HasPrefix(tag["href"], "https://testagram.site/hashtag/") {
+			t.Fatalf("invalid ActivityPub hashtag: %#v", tag)
+		}
+		names[tag["name"]] = true
+	}
+	if !names["#Mastodon"] || !names["#Kiswahili"] || !names["#東京"] {
+		t.Fatalf("Unicode or case-preserved tags missing: %#v", names)
+	}
+}
+
 func TestOutboxPollerCreatesAndDurablyEnqueuesActivityPubPost(t *testing.T) {
 	event, profile, actor := validBackendOutboxFixture(t)
 	poller, source, state := newOutboxFixture(t, event, profile, actor)
