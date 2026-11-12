@@ -69,7 +69,6 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 	return &Client{baseURL: baseURL, token: token, http: &copyClient}, nil
 }
 
-
 func (c *Client) GetPublicObject(ctx context.Context, postID string) (json.RawMessage, error) {
 	postID = strings.ToLower(strings.TrimSpace(postID))
 	if !canonicalPostIDPattern.MatchString(postID) {
@@ -128,9 +127,9 @@ func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remo
 		return errors.New("remote follow identity is invalid")
 	}
 	requestBody := map[string]string{
-		"local_user_id": localUserID,
+		"local_user_id":    localUserID,
 		"remote_actor_uri": remoteActorURI,
-		"activity_id": activityID,
+		"activity_id":      activityID,
 	}
 	if followActivityID != "" {
 		requestBody["follow_activity_id"] = followActivityID
@@ -170,9 +169,9 @@ func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remo
 		return fmt.Errorf("Backend remote follow update returned HTTP %d", resp.StatusCode)
 	}
 	var envelope struct {
-		OK bool
+		OK   bool
 		Data struct {
-			Status string
+			Status  string
 			Removed bool
 		}
 	}
