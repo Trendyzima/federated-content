@@ -191,15 +191,15 @@ func (w *OutboxPoller) processEvent(ctx context.Context, event backend.OutboxEve
 		"to":        []string{"https://www.w3.org/ns/activitystreams#Public"},
 		"cc":        []string{actor.ActorURI + "/followers"},
 		"object": map[string]any{
-			"@context":    "https://www.w3.org/ns/activitystreams",
-			"id":          objectURL,
-			"type":        "Note",
+			"@context":     "https://www.w3.org/ns/activitystreams",
+			"id":           objectURL,
+			"type":         "Note",
 			"attributedTo": actor.ActorURI,
-			"content":     strings.ReplaceAll(html.EscapeString(payload.Content), "\n", "<br />"),
-			"mediaType":   "text/html",
-			"published":   event.CreatedAt,
-			"to":          []string{"https://www.w3.org/ns/activitystreams#Public"},
-			"cc":          []string{actor.ActorURI + "/followers"},
+			"content":      strings.ReplaceAll(html.EscapeString(payload.Content), "\n", "<br />"),
+			"mediaType":    "text/html",
+			"published":    event.CreatedAt,
+			"to":           []string{"https://www.w3.org/ns/activitystreams#Public"},
+			"cc":           []string{actor.ActorURI + "/followers"},
 		},
 	}
 	encoded, err := json.Marshal(activity)
