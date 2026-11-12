@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -49,6 +50,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /.well-known/webfinger", s.webfinger)
 	s.mux.HandleFunc("GET /users/{username}", s.actor)
 	s.mux.HandleFunc("GET /users/{username}/outbox", s.outbox)
+	s.mux.HandleFunc("GET /users/{username}/followers", s.followers)
 	s.mux.HandleFunc("GET /objects/{post_id}", s.object)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
 	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
@@ -161,11 +163,81 @@ func (s *Server) actor(w http.ResponseWriter, r *http.Request) {
 		"name": actor.DisplayName, "summary": actor.Summary,
 		"inbox": actor.ActorURI + "/inbox", "outbox": actor.ActorURI + "/outbox",
 		"url":       s.cfg.PublicBaseURL + "/@" + actor.Username,
+		"followers": actor.ActorURI + "/followers",
 		"publicKey": map[string]string{"id": actor.PublicKeyID, "owner": actor.ActorURI, "publicKeyPem": actor.PublicKeyPEM},
 	}
 	w.Header().Set("Vary", "Accept")
 	w.Header().Set("Cache-Control", "no-store")
 	writeActivityJSON(w, http.StatusOK, actorDocument)
+}
+
+func (s *Server) followers(w http.ResponseWriter, r *http.Request) {
+ if !acceptsActivityJSON(r.Header.Get("Accept")) {
+  w.Header().Set("Vary","Accept")
+  writeError(w,http.StatusNotAcceptable,"activitypub_accept_required","Request an ActivityPub representation using Accept: application/activity+json")
+  return
+ }
+ if s.state==nil || s.backend==nil {
+  writeError(w,http.StatusServiceUnavailable,"followers_unavailable","Durable Federation storage and private Backend integration are required")
+  return
+ }
+ ctx,cancel:=context.WithTimeout(r.Context(),5*time.Second)
+ defer cancel()
+ actor,err:=s.resolveLocalActor(ctx,r.PathValue("username"))
+ if errors.Is(err,backend.ErrActorNotFound) {
+  writeError(w,http.StatusNotFound,"actor_not_found","Actor not found or federation is disabled")
+  return
+ }
+ if err!=nil {
+  writeError(w,http.StatusServiceUnavailable,"followers_unavailable","Actor eligibility lookup is unavailable")
+  return
+ }
+ collectionURL:=actor.ActorURI+"/followers"
+ total,err:=s.state.RemoteFollowerCount(ctx,actor.UserID)
+ if err!=nil {
+  writeError(w,http.StatusServiceUnavailable,"followers_unavailable","Remote followers collection is unavailable")
+  return
+ }
+ w.Header().Set("Vary","Accept")
+ w.Header().Set("Cache-Control","no-store")
+ if r.URL.Query().Get("page")!="true" {
+  writeActivityJSON(w,http.StatusOK,map[string]any{
+   "@context":"https://www.w3.org/ns/activitystreams",
+   "id":collectionURL,
+   "type":"OrderedCollection",
+   "totalItems":total,
+   "first":collectionURL+"?page=true",
+  })
+  return
+ }
+ after:=""
+ if raw:=strings.TrimSpace(r.URL.Query().Get("cursor"));raw!="" {
+  decoded,decodeErr:=base64.RawURLEncoding.DecodeString(raw)
+  if decodeErr!=nil || len(decoded)>2048 {
+   writeError(w,http.StatusBadRequest,"invalid_followers_cursor","The followers page cursor is invalid")
+   return
+  }
+  after=string(decoded)
+ }
+ items,next,hasMore,err:=s.state.RemoteFollowersPage(ctx,actor.UserID,after,40)
+ if err!=nil {
+  writeError(w,http.StatusServiceUnavailable,"followers_unavailable","Remote followers page is unavailable")
+  return
+ }
+ pageID:=collectionURL+"?page=true"
+ if after!="" { pageID+="&cursor="+url.QueryEscape(base64.RawURLEncoding.EncodeToString([]byte(after))) }
+ page:=map[string]any{
+  "@context":"https://www.w3.org/ns/activitystreams",
+  "id":pageID,
+  "type":"OrderedCollectionPage",
+  "partOf":collectionURL,
+  "totalItems":total,
+  "orderedItems":items,
+ }
+ if hasMore {
+  page["next"]=collectionURL+"?page=true&cursor="+url.QueryEscape(base64.RawURLEncoding.EncodeToString([]byte(next)))
+ }
+ writeActivityJSON(w,http.StatusOK,page)
 }
 
 func (s *Server) outbox(w http.ResponseWriter, r *http.Request) {
