@@ -205,7 +205,7 @@ func TestOutboxPollerCreatesAndDurablyEnqueuesActivityPubPost(t *testing.T) {
 			ID      string `json:"id"`
 			Type    string `json:"type"`
 			Content string `json:"content"`
-			Tag []struct {
+			Tag     []struct {
 				Type string `json:"type"`
 				Href string `json:"href"`
 				Name string `json:"name"`
