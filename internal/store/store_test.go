@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -250,5 +251,82 @@ func TestInboxLeaseRetryAndDeadLetterLifecycle(t *testing.T) {
 	}
 	if state != "dead_letter" {
 		t.Fatalf("permanent inbox failure state=%q, want dead_letter", state)
+	}
+}
+
+
+func TestRemoteFollowerInboxPaginationIsStableAndDeduplicated(t *testing.T) {
+	s := integrationStore(t)
+	ctx := context.Background()
+	userID := fmt.Sprintf("fanout_%d", time.Now().UnixNano())
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	const actors = 1003
+	for i := 0; i < actors; i++ {
+		actorURI := fmt.Sprintf("https://remote-%04d.example/users/actor", i)
+		inbox := fmt.Sprintf("https://remote-%04d.example/inbox", i)
+		shared := ""
+		if i < 2 {
+			shared = "https://shared.example/inbox"
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO remote_actors
+			(actor_uri,public_key_id,public_key_pem,inbox_url,shared_inbox_url)
+			VALUES ($1,$2,'test-key',$3,$4)`,
+			actorURI, actorURI+"#main-key", inbox, shared); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO remote_followers(local_user_id,remote_actor_uri)
+			VALUES ($1,$2)`, userID, actorURI); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO remote_actors
+		(actor_uri,public_key_id,public_key_pem,inbox_url)
+		VALUES ($1,$2,'test-key','http://invalid.example/inbox')`,
+		"https://invalid.example/users/actor", "https://invalid.example/users/actor#main-key"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO remote_followers(local_user_id,remote_actor_uri)
+		VALUES ($1,$2)`, userID, "https://invalid.example/users/actor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	after := ""
+	seen := make(map[string]bool)
+	pageSizes := []int{}
+	for {
+		page, next, more, err := s.RemoteFollowerInboxesPage(ctx, userID, after, 500)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pageSizes = append(pageSizes, len(page))
+		for _, inbox := range page {
+			if seen[inbox] {
+				t.Fatalf("duplicate inbox returned across pages: %s", inbox)
+			}
+			seen[inbox] = true
+		}
+		if !more {
+			break
+		}
+		if next == "" || next <= after {
+			t.Fatalf("pagination cursor did not advance: after=%q next=%q", after, next)
+		}
+		after = next
+	}
+	if len(seen) != 1002 {
+		t.Fatalf("distinct valid inbox count=%d, want 1002", len(seen))
+	}
+	if len(pageSizes) != 3 || pageSizes[0] != 500 || pageSizes[1] != 500 || pageSizes[2] != 2 {
+		t.Fatalf("unexpected fan-out page sizes: %v", pageSizes)
+	}
+	if seen["http://invalid.example/inbox"] {
+		t.Fatal("unsafe persisted inbox URL was returned for delivery")
 	}
 }
