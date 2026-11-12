@@ -212,9 +212,9 @@ func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remo
 		return errors.New("remote follow identity is invalid")
 	}
 	requestBody := map[string]string{
-		"local_user_id": localUserID,
+		"local_user_id":    localUserID,
 		"remote_actor_uri": remoteActorURI,
-		"activity_id": activityID,
+		"activity_id":      activityID,
 	}
 	if followActivityID != "" {
 		requestBody["follow_activity_id"] = followActivityID
@@ -254,10 +254,10 @@ func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remo
 		return fmt.Errorf("Backend remote follow update returned HTTP %d", resp.StatusCode)
 	}
 	var envelope struct {
-		OK bool `json:"ok"`
+		OK   bool `json:"ok"`
 		Data struct {
-			Status string `json:"status"`
-			Removed bool `json:"removed"`
+			Status  string `json:"status"`
+			Removed bool   `json:"removed"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil || !envelope.OK {
