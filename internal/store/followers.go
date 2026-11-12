@@ -115,62 +115,62 @@ func (s *Store) RemoteFollowerInboxesPage(ctx context.Context, localUserID, afte
 // RemoteFollowerCount returns the public remote-follower count for one
 // Backend-verified local actor.
 func (s *Store) RemoteFollowerCount(ctx context.Context, localUserID string) (int, error) {
- localUserID = strings.TrimSpace(localUserID)
- if localUserID == "" || len(localUserID) > 128 {
-  return 0, errors.New("invalid remote follower count query")
- }
- var count int
- if err := s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT remote_actor_uri) FROM remote_followers WHERE local_user_id=$1", localUserID).Scan(&count); err != nil {
-  return 0, err
- }
- return count, nil
+	localUserID = strings.TrimSpace(localUserID)
+	if localUserID == "" || len(localUserID) > 128 {
+		return 0, errors.New("invalid remote follower count query")
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT remote_actor_uri) FROM remote_followers WHERE local_user_id=$1", localUserID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // RemoteFollowersPage returns stable, bounded pages of remote actor URIs for
 // an actor's public ActivityPub followers collection.
 func (s *Store) RemoteFollowersPage(ctx context.Context, localUserID, after string, limit int) ([]string, string, bool, error) {
- localUserID = strings.TrimSpace(localUserID)
- if localUserID == "" || len(localUserID) > 128 || len(after) > 2048 || limit < 1 || limit > 100 {
-  return nil, "", false, errors.New("invalid remote followers page query")
- }
- rows, err := s.db.QueryContext(ctx, `
-  SELECT remote_actor_uri
-  FROM remote_followers
-  WHERE local_user_id=$1 AND remote_actor_uri>$2
-  ORDER BY remote_actor_uri
-  LIMIT $3`, localUserID, after, limit+1)
- if err != nil {
-  return nil, "", false, err
- }
- defer rows.Close()
- raw := make([]string, 0, limit+1)
- for rows.Next() {
-  var actorURI string
-  if err := rows.Scan(&actorURI); err != nil {
-   return nil, "", false, err
-  }
-  raw = append(raw, actorURI)
- }
- if err := rows.Err(); err != nil {
-  return nil, "", false, err
- }
- hasMore := len(raw) > limit
- if hasMore {
-  raw = raw[:limit]
- }
- if len(raw) == 0 {
-  return nil, after, false, nil
- }
- // Advance over every selected row, including malformed legacy rows, so a
- // corrupt persisted URI cannot pin the collection cursor indefinitely.
- next := raw[len(raw)-1]
- actors := make([]string, 0, len(raw))
- for _, actorURI := range raw {
-  parsed, parseErr := url.Parse(strings.TrimSpace(actorURI))
-  if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
-   continue
-  }
-  actors = append(actors, parsed.String())
- }
- return actors, next, hasMore, nil
+	localUserID = strings.TrimSpace(localUserID)
+	if localUserID == "" || len(localUserID) > 128 || len(after) > 2048 || limit < 1 || limit > 100 {
+		return nil, "", false, errors.New("invalid remote followers page query")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT remote_actor_uri
+		FROM remote_followers
+		WHERE local_user_id=$1 AND remote_actor_uri>$2
+		ORDER BY remote_actor_uri
+		LIMIT $3`, localUserID, after, limit+1)
+	if err != nil {
+		return nil, "", false, err
+	}
+	defer rows.Close()
+	raw := make([]string, 0, limit+1)
+	for rows.Next() {
+		var actorURI string
+		if err := rows.Scan(&actorURI); err != nil {
+			return nil, "", false, err
+		}
+		raw = append(raw, actorURI)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", false, err
+	}
+	hasMore := len(raw) > limit
+	if hasMore {
+		raw = raw[:limit]
+	}
+	if len(raw) == 0 {
+		return nil, after, false, nil
+	}
+	// Advance over every selected row, including malformed legacy rows, so a
+	// corrupt persisted URI cannot pin the collection cursor indefinitely.
+	next := raw[len(raw)-1]
+	actors := make([]string, 0, len(raw))
+	for _, actorURI := range raw {
+		parsed, parseErr := url.Parse(strings.TrimSpace(actorURI))
+		if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+			continue
+		}
+		actors = append(actors, parsed.String())
+	}
+	return actors, next, hasMore, nil
 }
