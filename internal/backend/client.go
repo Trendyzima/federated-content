@@ -12,9 +12,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var canonicalPostIDPattern = regexp.MustCompile(\`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$\`)
 
 type ActorProfile struct {
 	UserID            string `json:"user_id"`
@@ -64,6 +67,47 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 	}
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{baseURL: baseURL, token: token, http: &copyClient}, nil
+}
+
+func (c *Client) GetPublicObject(ctx context.Context, postID string) (json.RawMessage, error) {
+	postID = strings.ToLower(strings.TrimSpace(postID))
+	if !canonicalPostIDPattern.MatchString(postID) {
+		return nil, errors.New("invalid canonical public object ID")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/v1/federation/objects/"+url.PathEscape(postID), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Backend public object lookup failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrObjectNotFound
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Backend public object lookup returned HTTP %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil {
+		return nil, fmt.Errorf("read Backend public object response: %w", err)
+	}
+	if len(raw) > 1<<20 {
+		return nil, errors.New("Backend public object response exceeded 1 MiB")
+	}
+	var envelope struct {
+		OK   bool            \`json:"ok"\`
+		Data json.RawMessage \`json:"data"\`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || !envelope.OK || len(envelope.Data) == 0 || !json.Valid(envelope.Data) {
+		return nil, errors.New("Backend public object response has an invalid envelope")
+	}
+	return envelope.Data, nil
 }
 
 func (c *Client) ResolveActor(ctx context.Context, handle string) (ActorProfile, error) {
@@ -312,5 +356,6 @@ func newRequestID() string {
 }
 
 var ErrActorNotFound = errors.New("local actor not found")
+var ErrObjectNotFound = errors.New("public ActivityPub object not found")
 var ErrRemoteFollowNotAuthorized = errors.New("Backend did not authorize the remote follow")
 var ErrRemoteFollowConflict = errors.New("Backend rejected conflicting remote follow activity identity")
