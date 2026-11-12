@@ -31,10 +31,6 @@ type activityEnvelope struct {
 
 func (s *Server) enqueueAuthorizedActivity(w http.ResponseWriter, r *http.Request) {
 	ingressToken := s.cfg.FederationIngressToken
-	if ingressToken == "" {
-		// Backward compatibility for deployments that still use the legacy shared token.
-		ingressToken = s.cfg.BackendInternalToken
-	}
 	if ingressToken == "" || !validInternalBearer(r, ingressToken) {
 		writeError(w, http.StatusUnauthorized, "internal_auth_required", "A valid Backend service credential is required")
 		return
