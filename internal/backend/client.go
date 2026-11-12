@@ -195,6 +195,77 @@ func (c *Client) ListOutbox(ctx context.Context, after string, limit int) (Outbo
 	return envelope.Data, nil
 }
 
+func (c *Client) AcceptRemoteFollow(ctx context.Context, localUserID, remoteActorURI, activityID string) error {
+	return c.changeRemoteFollow(ctx, "/internal/v1/federation/remote-follows", localUserID, remoteActorURI, activityID, true)
+}
+
+func (c *Client) RemoveRemoteFollow(ctx context.Context, localUserID, remoteActorURI, activityID string) error {
+	return c.changeRemoteFollow(ctx, "/internal/v1/federation/remote-follows/undo", localUserID, remoteActorURI, activityID, false)
+}
+
+func (c *Client) changeRemoteFollow(ctx context.Context, path, localUserID, remoteActorURI, activityID string, accepting bool) error {
+	localUserID = strings.TrimSpace(localUserID)
+	remoteActorURI = strings.TrimSpace(remoteActorURI)
+	activityID = strings.TrimSpace(activityID)
+	if localUserID == "" || len(localUserID) > 36 || !isHTTPSActorURI(remoteActorURI) || !isHTTPSActorURI(activityID) {
+		return errors.New("remote follow identity is invalid")
+	}
+	body, err := json.Marshal(map[string]string{
+		"local_user_id": localUserID,
+		"remote_actor_uri": remoteActorURI,
+		"activity_id": activityID,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Testagram-API-Version", "1")
+	req.Header.Set("X-Request-ID", newRequestID())
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("Backend remote follow update failed: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
+	if err != nil {
+		return fmt.Errorf("read Backend remote follow response: %w", err)
+	}
+	if len(raw) > 64<<10 {
+		return errors.New("Backend remote follow response exceeded 64 KiB")
+	}
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
+		return ErrRemoteFollowNotAuthorized
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("Backend remote follow update returned HTTP %d", resp.StatusCode)
+	}
+	var envelope struct {
+		OK bool `json:"ok"`
+		Data struct {
+			Status string `json:"status"`
+			Removed bool `json:"removed"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || !envelope.OK {
+		return errors.New("Backend remote follow response has an invalid envelope")
+	}
+	if accepting && envelope.Data.Status != "accepted" {
+		return errors.New("Backend did not authorize the remote follow")
+	}
+	return nil
+}
+
+func isHTTPSActorURI(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
+}
+
 func (c *Client) Ready(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/v1/federation/readyz", nil)
 	if err != nil {
@@ -233,3 +304,4 @@ func newRequestID() string {
 }
 
 var ErrActorNotFound = errors.New("local actor not found")
+var ErrRemoteFollowNotAuthorized = errors.New("Backend did not authorize the remote follow")
