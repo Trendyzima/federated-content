@@ -244,3 +244,46 @@ func TestRemoteUnfollowCallsBackendBeforeLocalRoutingRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGetPublicObjectUsesPrivateBackendContract(t *testing.T) {
+	const token = "test-federation-service-token-which-is-long-enough"
+	postID := "123e4567-e89b-42d3-a456-426614174001"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/internal/v1/federation/objects/"+postID {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("X-Testagram-API-Version") != "1" {
+			t.Errorf("private object request headers are incomplete")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"id":"https://federation.testagram.site/objects/123e4567-e89b-42d3-a456-426614174001","type":"Note","content":"hello"},"error":null}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, token, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, err := client.GetPublicObject(context.Background(), postID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(object, &decoded); err != nil || decoded["type"] != "Note" {
+		t.Fatalf("invalid public ActivityPub object: %s (%v)", object, err)
+	}
+}
+
+func TestGetPublicObjectMapsBackendNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, strings.Repeat("t", 40), server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.GetPublicObject(context.Background(), "123e4567-e89b-42d3-a456-426614174001")
+	if !errors.Is(err, ErrObjectNotFound) {
+		t.Fatalf("error = %v, want ErrObjectNotFound", err)
+	}
+}
