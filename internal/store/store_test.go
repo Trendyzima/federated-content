@@ -254,7 +254,6 @@ func TestInboxLeaseRetryAndDeadLetterLifecycle(t *testing.T) {
 	}
 }
 
-
 func TestRemoteFollowerInboxPaginationIsStableAndDeduplicated(t *testing.T) {
 	s := integrationStore(t)
 	ctx := context.Background()
