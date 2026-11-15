@@ -72,6 +72,7 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.backend.Ready(ctx); err != nil {
+		s.logger.Error("Federation private Backend readiness failed", "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "reason": "private Backend dependency is unavailable"})
 		return
 	}
