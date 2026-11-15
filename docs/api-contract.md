@@ -27,3 +27,13 @@ Inbox acceptance is asynchronous: `202` confirms durable queue acceptance only. 
 
 ## Activation gate
 The signed inbox, durable inbox persistence, asynchronous processing, and delivery retry/dead-letter mechanisms are implemented. Keep public federation activation gated on staging interoperability, replay/deduplication verification, key-rotation drills, backend authorization and operational monitoring. Health/readiness alone is not permission to enable public federation.
+
+
+## Public Bluesky / AT Protocol read bridge
+
+The Federation service also exposes read-only public Bluesky actor data:
+
+- `GET /v1/atproto/actors/{handle}`
+- `GET /v1/atproto/actors/{handle}/feed?limit=20&cursor=...`
+
+These routes use the fixed official public Bluesky API origin and never accept caller-supplied upstream URLs or credentials. See [atproto-public-bridge.md](atproto-public-bridge.md) for security boundaries and release gates.
