@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Trendyzima/federated-content/internal/activitypub"
+	"github.com/Trendyzima/federated-content/internal/atproto"
 	"github.com/Trendyzima/federated-content/internal/backend"
 	"github.com/Trendyzima/federated-content/internal/config"
 	"github.com/Trendyzima/federated-content/internal/store"
@@ -29,6 +30,7 @@ type Server struct {
 	state   *store.Store
 	backend *backend.Client
 	keys    *activitypub.RemoteKeyResolver
+	atproto *atproto.Client
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -39,7 +41,7 @@ func NewWithRuntime(cfg config.Config, logger *slog.Logger, state *store.Store, 
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Server{cfg: cfg, logger: logger, mux: http.NewServeMux(), state: state, backend: backendClient, keys: activitypub.NewRemoteKeyResolver()}
+	s := &Server{cfg: cfg, logger: logger, mux: http.NewServeMux(), state: state, backend: backendClient, keys: activitypub.NewRemoteKeyResolver(), atproto: atproto.NewClient()}
 	s.routes()
 	return s.recoverer(s.requestLog(s.securityHeaders(s.mux)))
 }
@@ -54,6 +56,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /objects/{post_id}", s.object)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
 	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
+	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}", s.atprotoActor)
+	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}/feed", s.atprotoAuthorFeed)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
