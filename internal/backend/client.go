@@ -332,8 +332,16 @@ func (c *Client) Ready(ctx context.Context) error {
 		return fmt.Errorf("Backend readiness check failed: %w", err)
 	}
 	defer resp.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	if readErr != nil {
+		return fmt.Errorf("read Backend readiness response: %w", readErr)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Backend is not ready (HTTP %d)", resp.StatusCode)
+		detail := strings.TrimSpace(string(body))
+		if len(detail) > 512 {
+			detail = detail[:512]
+		}
+		return fmt.Errorf("Backend is not ready (HTTP %d): %s", resp.StatusCode, detail)
 	}
 	return nil
 }
