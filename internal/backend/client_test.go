@@ -38,6 +38,7 @@ func TestReadyUsesPrivateFederationReadinessContract(t *testing.T) {
 func TestReadyRejectsUnavailablePrivateBackend(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"FEDERATION_PUBLISHER_UNAVAILABLE"}`))
 	}))
 	defer server.Close()
 
@@ -47,6 +48,8 @@ func TestReadyRejectsUnavailablePrivateBackend(t *testing.T) {
 	}
 	if err := client.Ready(context.Background()); err == nil {
 		t.Fatal("unavailable private Backend was reported ready")
+	} else if !strings.Contains(err.Error(), "FEDERATION_PUBLISHER_UNAVAILABLE") {
+		t.Fatalf("readiness error omitted safe Backend diagnostic: %v", err)
 	}
 }
 
