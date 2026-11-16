@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ func TestInboxWorkerProjectsSignedPublicCreateAndUpdate(t *testing.T) {
 			backendClient := &fakeInboxBackend{profile: backend.ActorProfile{
 				UserID: "native-user-1", Handle: "alice", FederationEnabled: true,
 			}}
-			worker := &InboxWorker{store: state, backend: backendClient, publicBaseURL: "https://federation.testagram.site"}
+			worker := &InboxWorker{store: state, backend: backendClient, publicBaseURL: "https://federation.testagram.site", logger: slog.Default()}
 			if _, err := worker.ProcessBatch(context.Background()); err != nil {
 				t.Fatal(err)
 			}
