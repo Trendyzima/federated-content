@@ -89,13 +89,27 @@ func ValidHandle(handle string) bool {
 	return len(handle) <= 253 && handlePattern.MatchString(handle)
 }
 
-func validDID(did string) bool {
+func ValidDID(did string) bool {
 	did = strings.TrimSpace(did)
 	if len(did) < 12 || len(did) > 512 || strings.ContainsAny(did, " \t\r\n") {
 		return false
 	}
-	return strings.HasPrefix(did, "did:plc:") || strings.HasPrefix(did, "did:web:")
+	if strings.HasPrefix(did, "did:plc:") {
+		identifier := strings.TrimPrefix(did, "did:plc:")
+		if len(identifier) != 24 { return false }
+		for _, char := range identifier {
+			if !(char >= 'a' && char <= 'z') && !(char >= '2' && char <= '7') { return false }
+		}
+		return true
+	}
+	if strings.HasPrefix(did, "did:web:") {
+		identifier := strings.TrimPrefix(did, "did:web:")
+		return identifier != "" && !strings.ContainsAny(identifier, " /?#@")
+	}
+	return false
 }
+
+func validDID(did string) bool { return ValidDID(did) }
 
 func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out any) error {
 	if c == nil || c.http == nil {
