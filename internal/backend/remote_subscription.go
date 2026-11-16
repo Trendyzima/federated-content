@@ -66,7 +66,7 @@ func (c *Client) VerifyRemoteSubscription(ctx context.Context, input RemoteSubsc
 		return fmt.Errorf("Backend remote subscription verification returned HTTP %d", resp.StatusCode)
 	}
 	var envelope struct {
-		OK bool `json:"ok"`
+		OK   bool `json:"ok"`
 		Data struct {
 			VerificationStatus string `json:"verification_status"`
 		} `json:"data"`
