@@ -91,7 +91,7 @@ func TestBackendATProtoFeedRejectsNewlineCursor(t *testing.T) {
 		cfg: config.Config{FederationIngressToken: token},
 		atproto: fake,
 	}
-	body := `{"actor_dids":["` + did + `"],"limit_per_actor":10,"cursors":{"` + did + `":"bad\\n cursor"}}`
+	body := `{"actor_dids":["` + did + `"],"limit_per_actor":10,"cursors":{"` + did + `":"bad\n cursor"}}`
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
