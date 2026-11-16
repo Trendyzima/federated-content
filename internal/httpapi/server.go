@@ -56,6 +56,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /objects/{post_id}", s.object)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
 	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
+	s.mux.HandleFunc("POST /internal/v1/atproto/feed", s.backendAuthorizedATProtoFeed)
+	s.mux.HandleFunc("POST /internal/v1/remote-objects", s.backendAuthorizedRemoteObjects)
 	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}", s.atprotoActor)
 	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}/feed", s.atprotoAuthorFeed)
 }
@@ -350,7 +352,7 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !supportedInboxActivityType(activity.Type) {
-		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "Only signed Follow and Undo activities are enabled for inbound processing")
+		writeError(w, http.StatusUnprocessableEntity, "unsupported_activity_type", "Signed Follow, Undo, Create, Update and Delete activities are accepted for durable processing")
 		return
 	}
 	// Recheck consent and account status after signature verification. This
@@ -386,7 +388,7 @@ func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func supportedInboxActivityType(activityType string) bool {
-	return activityType == "Follow" || activityType == "Undo"
+	return activityType == "Follow" || activityType == "Undo" || activityType == "Create" || activityType == "Update" || activityType == "Delete"
 }
 
 func isActivityPubContentType(raw string) bool {

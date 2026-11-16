@@ -89,13 +89,31 @@ func ValidHandle(handle string) bool {
 	return len(handle) <= 253 && handlePattern.MatchString(handle)
 }
 
-func validDID(did string) bool {
+func ValidDID(did string) bool {
 	did = strings.TrimSpace(did)
 	if len(did) < 12 || len(did) > 512 || strings.ContainsAny(did, " \t\r\n") {
 		return false
 	}
-	return strings.HasPrefix(did, "did:plc:") || strings.HasPrefix(did, "did:web:")
+	if strings.HasPrefix(did, "did:plc:") {
+		identifier := strings.TrimPrefix(did, "did:plc:")
+		if len(identifier) != 24 {
+			return false
+		}
+		for _, char := range identifier {
+			if !(char >= 'a' && char <= 'z') && !(char >= '2' && char <= '7') {
+				return false
+			}
+		}
+		return true
+	}
+	if strings.HasPrefix(did, "did:web:") {
+		identifier := strings.TrimPrefix(did, "did:web:")
+		return identifier != "" && !strings.ContainsAny(identifier, " /?#@")
+	}
+	return false
 }
+
+func validDID(did string) bool { return ValidDID(did) }
 
 func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out any) error {
 	if c == nil || c.http == nil {
@@ -159,10 +177,31 @@ func (c *Client) AuthorFeed(ctx context.Context, handle string, limit int, curso
 	if err != nil {
 		return FeedPage{}, err
 	}
+	return c.authorFeed(ctx, profile, limit, cursor)
+}
+
+// AuthorFeedByDID accepts only a protocol DID supplied by the authenticated
+// Backend. It resolves the profile by DID and verifies that the returned DID
+// is identical before fetching posts; handles are never identity assertions.
+func (c *Client) AuthorFeedByDID(ctx context.Context, did string, limit int, cursor string) (FeedPage, error) {
+	if !validDID(did) {
+		return FeedPage{}, errors.New("invalid AT Protocol DID")
+	}
+	var profile Profile
+	if err := c.getJSON(ctx, "/xrpc/app.bsky.actor.getProfile", url.Values{"actor": []string{did}}, &profile); err != nil {
+		return FeedPage{}, err
+	}
+	if !validDID(profile.DID) || profile.DID != did || !ValidHandle(strings.ToLower(profile.Handle)) {
+		return FeedPage{}, fmt.Errorf("%w: profile DID did not match Backend-authorized DID", ErrUnavailable)
+	}
+	return c.authorFeed(ctx, profile, limit, cursor)
+}
+
+func (c *Client) authorFeed(ctx context.Context, profile Profile, limit int, cursor string) (FeedPage, error) {
 	if limit < 1 || limit > 25 {
 		limit = 20
 	}
-	if len(cursor) > 512 || strings.ContainsAny(cursor, "\r\n") {
+	if len(cursor) > 512 || strings.ContainsAny(cursor, "\\r\\n") {
 		return FeedPage{}, errors.New("invalid AT Protocol feed cursor")
 	}
 	query := url.Values{"actor": []string{profile.DID}, "limit": []string{fmt.Sprint(limit)}, "filter": []string{"posts_with_replies"}}
@@ -197,7 +236,9 @@ func (c *Client) AuthorFeed(ctx context.Context, handle string, limit int, curso
 	posts := make([]Post, 0, len(raw.Feed))
 	for _, entry := range raw.Feed {
 		p := entry.Post
-		if !strings.HasPrefix(p.URI, "at://") || p.CID == "" || !validDID(p.Author.DID) {
+		if !strings.HasPrefix(p.URI, "at://"+profile.DID+"/app.bsky.feed.post/") ||
+			len(p.URI) > 2048 || p.CID == "" || len(p.CID) > 256 ||
+			!validDID(p.Author.DID) || p.Author.DID != profile.DID {
 			continue
 		}
 		labels := make([]string, 0, len(p.Labels))
