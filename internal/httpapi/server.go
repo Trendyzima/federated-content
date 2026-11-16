@@ -30,7 +30,7 @@ type Server struct {
 	state   *store.Store
 	backend *backend.Client
 	keys    *activitypub.RemoteKeyResolver
-	atproto *atproto.Client
+	atproto atprotoAuthorFeedClient
 }
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
