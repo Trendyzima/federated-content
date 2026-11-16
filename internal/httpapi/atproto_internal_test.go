@@ -37,7 +37,7 @@ func TestBackendATProtoFeedForwardsCursorPerAuthorizedDID(t *testing.T) {
 	didB := "did:plc:333333333333333333333333"
 	fake := &recordingATProtoFeedClient{cursors: make(map[string]string)}
 	server := &Server{
-		cfg: config.Config{FederationIngressToken: token},
+		cfg:     config.Config{FederationIngressToken: token},
 		atproto: fake,
 	}
 	body := `{"actor_dids":["` + didA + `","` + didB + `"],"limit_per_actor":10,"cursors":{"` + didA + `":"cursor-a","` + didB + `":"cursor-b"}}`
@@ -54,7 +54,7 @@ func TestBackendATProtoFeedForwardsCursorPerAuthorizedDID(t *testing.T) {
 		t.Fatalf("per-DID cursors were not forwarded: calls=%d cursors=%#v", fake.calls, fake.cursors)
 	}
 	var envelope struct {
-		OK bool `json:"ok"`
+		OK   bool `json:"ok"`
 		Data struct {
 			Actors []backendATProtoActorFeed `json:"actors"`
 		} `json:"data"`
@@ -72,7 +72,7 @@ func TestBackendATProtoFeedRejectsCursorOutsideAuthorizedDIDs(t *testing.T) {
 	did := "did:plc:222222222222222222222222"
 	fake := &recordingATProtoFeedClient{cursors: make(map[string]string)}
 	server := &Server{
-		cfg: config.Config{FederationIngressToken: token},
+		cfg:     config.Config{FederationIngressToken: token},
 		atproto: fake,
 	}
 	body := `{"actor_dids":["` + did + `"],"limit_per_actor":10,"cursors":{"did:plc:333333333333333333333333":"foreign-cursor"}}`
@@ -92,7 +92,7 @@ func TestBackendATProtoFeedRejectsNewlineCursor(t *testing.T) {
 	did := "did:plc:222222222222222222222222"
 	fake := &recordingATProtoFeedClient{cursors: make(map[string]string)}
 	server := &Server{
-		cfg: config.Config{FederationIngressToken: token},
+		cfg:     config.Config{FederationIngressToken: token},
 		atproto: fake,
 	}
 	body := `{"actor_dids":["` + did + `"],"limit_per_actor":10,"cursors":{"` + did + `":"bad\n cursor"}}`
