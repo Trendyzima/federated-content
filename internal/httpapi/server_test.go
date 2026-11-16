@@ -202,50 +202,53 @@ func TestSupportedInboxActivityTypeIsLimitedToImplementedProjections(t *testing.
 }
 
 func TestSupportedInboxActivityTypes(t *testing.T) {
-    for _, tc := range []struct { activity string; want bool }{
-        {"Follow", true}, {"Undo", true}, {"Create", true}, {"Update", true}, {"Delete", true},
-        {"Like", false}, {"Announce", false}, {"Accept", false}, {"", false},
-    } {
-        if got := supportedInboxActivityType(tc.activity); got != tc.want {
-            t.Errorf("supportedInboxActivityType(%q)=%v want=%v", tc.activity, got, tc.want)
-        }
-    }
+	for _, tc := range []struct {
+		activity string
+		want     bool
+	}{
+		{"Follow", true}, {"Undo", true}, {"Create", true}, {"Update", true}, {"Delete", true},
+		{"Like", false}, {"Announce", false}, {"Accept", false}, {"", false},
+	} {
+		if got := supportedInboxActivityType(tc.activity); got != tc.want {
+			t.Errorf("supportedInboxActivityType(%q)=%v want=%v", tc.activity, got, tc.want)
+		}
+	}
 }
 
 func TestBackendATProtoFeedRequiresFederationIngressCredential(t *testing.T) {
-    cfg := config.Config{
-        HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site",
-        InstanceDomain: "testagram.site", ServiceActorUsername: "testagram",
-        FederationIngressToken: "a-long-test-only-backend-to-federation-token",
-    }
-    handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-    req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(`{"actor_dids":["did:plc:abcdefghijklmnopqrstuvwx"]}`))
-    req.Header.Set("Content-Type", "application/json")
-    rec := httptest.NewRecorder()
-    handler.ServeHTTP(rec, req)
-    if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "internal_auth_required") {
-        t.Fatalf("unauthenticated Backend feed request was not rejected: %d %s", rec.Code, rec.Body.String())
-    }
+	cfg := config.Config{
+		HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site",
+		InstanceDomain: "testagram.site", ServiceActorUsername: "testagram",
+		FederationIngressToken: "a-long-test-only-backend-to-federation-token",
+	}
+	handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(`{"actor_dids":["did:plc:abcdefghijklmnopqrstuvwx"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "internal_auth_required") {
+		t.Fatalf("unauthenticated Backend feed request was not rejected: %d %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestBackendATProtoFeedRejectsDuplicateOrMalformedDIDs(t *testing.T) {
-    cfg := config.Config{
-        HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site",
-        InstanceDomain: "testagram.site", ServiceActorUsername: "testagram",
-        FederationIngressToken: "a-long-test-only-backend-to-federation-token",
-    }
-    handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-    for _, body := range []string{
-        `{"actor_dids":["did:plc:abcdefghijklmnopqrstuvwx","did:plc:abcdefghijklmnopqrstuvwx"]}`,
-        `{"actor_dids":["https://evil.example"]}`,
-    } {
-        req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(body))
-        req.Header.Set("Content-Type", "application/json")
-        req.Header.Set("Authorization", "Bearer "+cfg.FederationIngressToken)
-        rec := httptest.NewRecorder()
-        handler.ServeHTTP(rec, req)
-        if rec.Code != http.StatusBadRequest {
-            t.Errorf("invalid actor list accepted: %d %s", rec.Code, rec.Body.String())
-        }
-    }
+	cfg := config.Config{
+		HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site",
+		InstanceDomain: "testagram.site", ServiceActorUsername: "testagram",
+		FederationIngressToken: "a-long-test-only-backend-to-federation-token",
+	}
+	handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, body := range []string{
+		`{"actor_dids":["did:plc:abcdefghijklmnopqrstuvwx","did:plc:abcdefghijklmnopqrstuvwx"]}`,
+		`{"actor_dids":["https://evil.example"]}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+cfg.FederationIngressToken)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("invalid actor list accepted: %d %s", rec.Code, rec.Body.String())
+		}
+	}
 }
