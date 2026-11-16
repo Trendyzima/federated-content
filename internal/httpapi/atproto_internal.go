@@ -20,6 +20,8 @@ type backendATProtoFeedRequest struct {
 }
 
 type atprotoAuthorFeedClient interface {
+	ResolveProfile(context.Context, string) (atproto.Profile, error)
+	AuthorFeed(context.Context, string, int, string) (atproto.FeedPage, error)
 	AuthorFeedByDID(context.Context, string, int, string) (atproto.FeedPage, error)
 }
 
