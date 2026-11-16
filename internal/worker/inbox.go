@@ -27,6 +27,11 @@ type InboxStore interface {
 	EnqueueOutbox(context.Context, string, string, []byte, []string) error
 }
 
+type remoteObjectInboxStore interface {
+    ApplyRemoteObjectActivity(context.Context, string, string, store.RemoteObject) error
+    ApplyRemoteObjectDeletion(context.Context, string, string, string, time.Time) error
+}
+
 type InboxBackend interface {
 	ResolveActor(context.Context, string) (backend.ActorProfile, error)
 	AcceptRemoteFollow(context.Context, string, string, string) error
@@ -102,10 +107,12 @@ func (w *InboxWorker) ProcessBatch(ctx context.Context) (int, error) {
 }
 
 type inboxEnvelope struct {
-	ID     string          `json:"id"`
-	Type   string          `json:"type"`
-	Actor  string          `json:"actor"`
-	Object json.RawMessage `json:"object"`
+    ID string `json:"id"`
+    Type string `json:"type"`
+    Actor string `json:"actor"`
+    Published string `json:"published"`
+    Updated string `json:"updated"`
+    Object json.RawMessage `json:"object"`
 }
 
 type followEnvelope struct {
@@ -141,7 +148,51 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 	}
 
 	switch activity.Type {
-	case "Follow":
+    case "Create", "Update":
+        objectStore, ok := w.store.(remoteObjectInboxStore)
+        if !ok { return errors.New("durable remote object projection store is unavailable") }
+        var object struct {
+            ID string `json:"id"`
+            Type string `json:"type"`
+            AttributedTo string `json:"attributedTo"`
+            Content string `json:"content"`
+            Published string `json:"published"`
+            Updated string `json:"updated"`
+            To []string `json:"to"`
+            CC []string `json:"cc"`
+        }
+        if err := json.Unmarshal(activity.Object, &object); err != nil ||
+            !isHTTPSActivityID(object.ID) || object.AttributedTo != item.ActorURI ||
+            (object.Type != "Note" && object.Type != "Article") ||
+            strings.TrimSpace(object.Content) == "" || len(object.Content) > 20000 {
+            return permanentInbox("remote Create/Update object failed identity or content validation")
+        }
+        activityAt, err := parseActivityTimestamp(activity.Updated, activity.Published)
+        if err != nil { return permanentInbox("remote activity has an invalid timestamp") }
+        var publishedAt *time.Time
+        if object.Published != "" {
+            parsed, err := time.Parse(time.RFC3339, object.Published)
+            if err != nil { return permanentInbox("remote object has an invalid published timestamp") }
+            publishedAt = &parsed
+        }
+        if err := objectStore.ApplyRemoteObjectActivity(ctx, activity.ID, activity.Type, store.RemoteObject{
+            ObjectURI: object.ID, ActorURI: item.ActorURI, ObjectType: object.Type,
+            Content: object.Content, PublishedAt: publishedAt, Visibility: activityVisibility(object.To, object.CC),
+            Payload: append([]byte(nil), activity.Object...), ActivityAt: activityAt,
+        }); err != nil { return fmt.Errorf("persist remote object projection: %w", err) }
+        return nil
+    case "Delete":
+        objectStore, ok := w.store.(remoteObjectInboxStore)
+        if !ok { return errors.New("durable remote object projection store is unavailable") }
+        objectURI, ok := activityObjectURI(activity.Object)
+        if !ok { return permanentInbox("Delete activity has an invalid object identifier") }
+        activityAt, err := parseActivityTimestamp(activity.Published, "")
+        if err != nil { return permanentInbox("Delete activity has an invalid timestamp") }
+        if err := objectStore.ApplyRemoteObjectDeletion(ctx, activity.ID, objectURI, item.ActorURI, activityAt); err != nil {
+            return fmt.Errorf("persist remote object tombstone: %w", err)
+        }
+        return nil
+    case "Follow":
 		target, ok := activityObjectURI(activity.Object)
 		if !ok || target != localActor.ActorURI {
 			return permanentInbox("Follow activity targets a different local actor")
@@ -205,6 +256,25 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 	default:
 		return permanentInbox("inbound activity type is durably quarantined until its Backend projection is implemented: " + activity.Type)
 	}
+}
+
+func activityVisibility(to, cc []string) string {
+    const public = "https://www.w3.org/ns/activitystreams#Public"
+    for _, value := range to { if value == public { return "public" } }
+    for _, value := range cc { if value == public { return "unlisted" } }
+    for _, value := range append(append([]string{}, to...), cc...) {
+        if strings.HasSuffix(strings.TrimRight(value, "/"), "/followers") { return "followers" }
+    }
+    return "direct"
+}
+
+func parseActivityTimestamp(primary, fallback string) (time.Time, error) {
+    raw := strings.TrimSpace(primary)
+    if raw == "" { raw = strings.TrimSpace(fallback) }
+    if raw == "" { return time.Now().UTC(), nil }
+    parsed, err := time.Parse(time.RFC3339Nano, raw)
+    if err != nil { return time.Time{}, err }
+    return parsed.UTC(), nil
 }
 
 func activityObjectURI(raw json.RawMessage) (string, bool) {
