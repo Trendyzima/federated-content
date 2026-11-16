@@ -2,7 +2,9 @@ package store
 
 import (
     "context"
+    "encoding/base64"
     "errors"
+    "fmt"
     "net/url"
     "strings"
     "time"
@@ -97,4 +99,89 @@ func (s *Store) ApplyRemoteObjectDeletion(ctx context.Context, activityID, objec
         WHERE object_uri=$1 AND actor_uri=$2`, objectURI, actorURI, activityAt)
     if err != nil { return err }
     return tx.Commit()
+}
+
+type RemoteObjectCandidate struct {
+    ObjectURI string `json:"object_uri"`
+    ActorURI string `json:"actor_uri"`
+    ObjectType string `json:"object_type"`
+    Content string `json:"content"`
+    PublishedAt *time.Time `json:"published_at,omitempty"`
+    Visibility string `json:"visibility"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+type RemoteObjectPage struct {
+    Items []RemoteObjectCandidate `json:"items"`
+    NextCursor string `json:"next_cursor,omitempty"`
+}
+
+func encodeRemoteObjectCursor(at time.Time, objectURI string) string {
+    return base64.RawURLEncoding.EncodeToString([]byte(at.UTC().Format(time.RFC3339Nano)+"\n"+objectURI))
+}
+
+func decodeRemoteObjectCursor(raw string) (time.Time, string, error) {
+    if raw == "" { return time.Time{}, "", nil }
+    if len(raw) > 2048 { return time.Time{}, "", errors.New("remote object cursor is too large") }
+    decoded, err := base64.RawURLEncoding.DecodeString(raw)
+    if err != nil { return time.Time{}, "", errors.New("remote object cursor is malformed") }
+    parts := strings.SplitN(string(decoded), "\n", 2)
+    if len(parts) != 2 || !validRemoteObjectURI(parts[1]) { return time.Time{}, "", errors.New("remote object cursor is invalid") }
+    at, err := time.Parse(time.RFC3339Nano, parts[0])
+    if err != nil { return time.Time{}, "", errors.New("remote object cursor timestamp is invalid") }
+    return at.UTC(), parts[1], nil
+}
+
+// ListAuthorizedRemoteObjects only returns public/unlisted projections for the
+// exact actor allowlist supplied by Backend. It does not perform viewer auth;
+// Backend must compute this allowlist after applying its own social-graph and
+// privacy policy. Followers-only and direct objects are never returned here.
+func (s *Store) ListAuthorizedRemoteObjects(ctx context.Context, actorURIs []string, limit int, cursor string) (RemoteObjectPage, error) {
+    if len(actorURIs) == 0 || len(actorURIs) > 100 { return RemoteObjectPage{}, errors.New("remote actor allowlist must contain 1-100 entries") }
+    if limit < 1 || limit > 100 { return RemoteObjectPage{}, errors.New("remote object limit must be between 1 and 100") }
+    seen := make(map[string]struct{}, len(actorURIs))
+    args := make([]any, 0, len(actorURIs)+3)
+    placeholders := make([]string, 0, len(actorURIs))
+    for _, actorURI := range actorURIs {
+        actorURI = strings.TrimSpace(actorURI)
+        if !validRemoteObjectURI(actorURI) { return RemoteObjectPage{}, errors.New("remote actor allowlist contains an invalid HTTPS URI") }
+        if _, ok := seen[actorURI]; ok { continue }
+        seen[actorURI] = struct{}{}
+        args = append(args, actorURI)
+        placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+    }
+    if len(args) == 0 { return RemoteObjectPage{}, errors.New("remote actor allowlist is empty") }
+    cursorAt, cursorURI, err := decodeRemoteObjectCursor(cursor)
+    if err != nil { return RemoteObjectPage{}, err }
+    query := `SELECT object_uri,actor_uri,object_type,content,published_at,visibility,created_at
+        FROM remote_objects
+        WHERE actor_uri IN (`+strings.Join(placeholders, ",")+`)
+          AND visibility IN ('public','unlisted') AND deleted_at IS NULL`
+    if cursor != "" {
+        args = append(args, cursorAt, cursorURI)
+        query += fmt.Sprintf(" AND (COALESCE(published_at,created_at),object_uri) < ($%d,$%d)", len(args)-1, len(args))
+    }
+    args = append(args, limit+1)
+    query += fmt.Sprintf(" ORDER BY COALESCE(published_at,created_at) DESC,object_uri DESC LIMIT $%d", len(args))
+    rows, err := s.db.QueryContext(ctx, query, args...)
+    if err != nil { return RemoteObjectPage{}, err }
+    defer rows.Close()
+    items := make([]RemoteObjectCandidate, 0, limit+1)
+    for rows.Next() {
+        var item RemoteObjectCandidate
+        if err := rows.Scan(&item.ObjectURI,&item.ActorURI,&item.ObjectType,&item.Content,&item.PublishedAt,&item.Visibility,&item.CreatedAt); err != nil {
+            return RemoteObjectPage{}, err
+        }
+        items = append(items,item)
+    }
+    if err := rows.Err(); err != nil { return RemoteObjectPage{}, err }
+    page := RemoteObjectPage{Items: items}
+    if len(page.Items) > limit {
+        last := page.Items[limit-1]
+        sortAt := last.CreatedAt
+        if last.PublishedAt != nil { sortAt = *last.PublishedAt }
+        page.NextCursor = encodeRemoteObjectCursor(sortAt,last.ObjectURI)
+        page.Items = page.Items[:limit]
+    }
+    return page,nil
 }
