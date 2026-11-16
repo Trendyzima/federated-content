@@ -82,3 +82,7 @@ func validRemoteActorURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
 }
+
+func ValidLocalUserID(value string) bool {
+	return canonicalPostIDPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
+}
