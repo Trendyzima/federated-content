@@ -33,7 +33,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		AppEnv:                 env("APP_ENV", "development"),
 		HTTPAddr:               env("HTTP_ADDR", ":8081"),
-		PublicBaseURL:          strings.TrimRight(env("PUBLIC_BASE_URL", "https://federation.testagram.site"), "/"),
+		PublicBaseURL:          strings.TrimRight(env("PUBLIC_BASE_URL", "https://testagram.site"), "/"),
 		InstanceDomain:         strings.ToLower(strings.TrimSpace(env("INSTANCE_DOMAIN", "testagram.site"))),
 		ServiceActorUsername:   strings.ToLower(strings.TrimSpace(env("SERVICE_ACTOR_USERNAME", "testagram"))),
 		ServiceActorName:       env("SERVICE_ACTOR_NAME", "Testagram"),
