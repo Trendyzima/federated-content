@@ -7,7 +7,7 @@ The ActivityPub protocol service for Testagram's six runtime repositories, coord
 | Repository | Owns | Must not own |
 | --- | --- | --- |
 | [Testagram Flutter Client](https://github.com/Trendyzima/testagram-flutter-client-) | Native web/mobile UI, presentation and user interactions | Canonical identity, permissions, federation delivery or media durability |
-| [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-) | Appwrite identity verification; canonical profiles, posts, follows, blocks, visibility, authorization and public API | ActivityPub protocol execution or ranking policy |
+| [Testagram Backend](https://github.com/Trendyzima/Testagram-backend-) | Native Testagram identity and session lifecycle; canonical profiles, posts, follows, blocks, visibility, authorization and public API | ActivityPub protocol execution or ranking policy |
 | **Federated Content (this repository)** | WebFinger, ActivityPub actors/keys, remote actor cache, signed inbox, protocol outbox and delivery workers | Canonical Testagram users/posts, permissions or media ownership |
 | [Testagram Data Centre](https://github.com/Trendyzima/Testagram-data-centre-) | Federation runtime deployment, private networking, PostgreSQL operations, backups and recovery | Product identity or social application policy |
 | [Testagram CDN](https://github.com/Trendyzima/cdn-) | Approved media byte delivery, edge caching and range/HLS transport | Product visibility, media ownership or federation authorization |
@@ -76,8 +76,19 @@ The HTTP service listens on `:8081` by default.
 | `GET /users/{username}` | ActivityPub actor document; requires an ActivityPub-compatible `Accept` header |
 | `GET /users/{username}/outbox` | Persisted ActivityPub outbox collection |
 | `POST /users/{username}/inbox` | Verify and durably accept a signed activity; returns 202 only after persistence |
+| `POST /internal/v1/remote-objects` | Private Backend-only query for public/unlisted remote ActivityPub projections; Backend supplies the viewer-authorized actor URI allowlist |
+| `POST /internal/v1/atproto/feed` | Private Backend-only aggregation of public Bluesky author feeds for a bounded list of Backend-authorized DIDs |
 
 For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATION_DATABASE_URL`, `BACKEND_INTERNAL_URL`, `BACKEND_INTERNAL_TOKEN` and `FEDERATION_INGRESS_TOKEN` with distinct values. The outbound delivery worker is disabled by default; only set `FEDERATION_DELIVERY_WORKER_ENABLED=true` in an isolated environment after creating test delivery jobs. Do not put the private service token in a frontend, mobile bundle, public workflow log or browser request.
+
+## Current remote feed boundary
+
+- Signed ActivityPub `Create`, `Update` and `Delete` are accepted only after HTTP Signature, Date, Digest, actor/key ownership and local-recipient eligibility checks.
+- Remote ActivityPub objects are stored separately from Testagram-native users and posts. Activity IDs are idempotent; update ordering is monotonic; Delete writes durable tombstones that prevent stale resurrection.
+- Original `to`/`cc` audience fields are retained. Public and unlisted projections may be queried by Backend; followers-only and direct objects are excluded from this shared candidate endpoint.
+- The Bluesky bridge can fetch public author feeds by DID, verifies that the resolved profile DID matches the requested DID, and rejects posts whose AT URI or author DID does not match.
+- Both internal feed endpoints require the Backend-to-Federation bearer credential. Backend must supply actor allowlists only after viewer-specific follow, visibility, block, mute and moderation checks.
+- Federation does not create Testagram accounts, auto-link protocol identities, rank posts, or decide which viewer may see a post.
 
 ## Security and reliability requirements
 
