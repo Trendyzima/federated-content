@@ -201,7 +201,6 @@ func TestSupportedInboxActivityTypeIsLimitedToImplementedProjections(t *testing.
 	}
 }
 
-
 func TestBackendATProtoFeedRequiresFederationIngressCredential(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site",
