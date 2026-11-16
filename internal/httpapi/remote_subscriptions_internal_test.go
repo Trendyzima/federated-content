@@ -1,6 +1,9 @@
 package httpapi
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestResolveRemoteActivityPubActorRejectsUnsafeIdentitiesBeforeNetwork(t *testing.T) {
 	for _, identity := range []string{
@@ -11,7 +14,7 @@ func TestResolveRemoteActivityPubActorRejectsUnsafeIdentitiesBeforeNetwork(t *te
 		"file:///etc/passwd",
 		"not-a-url",
 	} {
-		if _, err := resolveRemoteActivityPubActor(t.Context(), identity); err == nil {
+		if _, err := resolveRemoteActivityPubActor(context.Background(), identity); err == nil {
 			t.Errorf("expected unsafe actor URI %q to be rejected", identity)
 		}
 	}
