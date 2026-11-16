@@ -96,9 +96,13 @@ func ValidDID(did string) bool {
 	}
 	if strings.HasPrefix(did, "did:plc:") {
 		identifier := strings.TrimPrefix(did, "did:plc:")
-		if len(identifier) != 24 { return false }
+		if len(identifier) != 24 {
+			return false
+		}
 		for _, char := range identifier {
-			if !(char >= 'a' && char <= 'z') && !(char >= '2' && char <= '7') { return false }
+			if !(char >= 'a' && char <= 'z') && !(char >= '2' && char <= '7') {
+				return false
+			}
 		}
 		return true
 	}
