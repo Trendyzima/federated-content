@@ -19,6 +19,15 @@ type recordingATProtoFeedClient struct {
 	calls   int
 }
 
+func (f *recordingATProtoFeedClient) ResolveProfile(_ context.Context, handle string) (atproto.Profile, error) {
+	return atproto.Profile{DID: "did:plc:222222222222222222222222", Handle: handle}, nil
+}
+
+func (f *recordingATProtoFeedClient) AuthorFeed(_ context.Context, handle string, _ int, _ string) (atproto.FeedPage, error) {
+	return atproto.FeedPage{Profile: atproto.Profile{DID: "did:plc:222222222222222222222222", Handle: handle}, Source: "bluesky-atproto"}, nil
+}
+
+
 func (f *recordingATProtoFeedClient) AuthorFeedByDID(_ context.Context, did string, _ int, cursor string) (atproto.FeedPage, error) {
 	f.mu.Lock()
 	f.calls++
