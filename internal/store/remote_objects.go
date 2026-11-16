@@ -2,6 +2,7 @@ package store
 
 import (
     "context"
+    "database/sql"
     "encoding/base64"
     "errors"
     "fmt"
@@ -46,6 +47,10 @@ func (s *Store) ApplyRemoteObjectActivity(ctx context.Context, activityID, activ
     tx, err := s.db.BeginTx(ctx, nil)
     if err != nil { return err }
     defer tx.Rollback()
+    var existingActor string
+    err = tx.QueryRowContext(ctx, `SELECT actor_uri FROM remote_objects WHERE object_uri=$1`, object.ObjectURI).Scan(&existingActor)
+    if err == nil && existingActor != object.ActorURI { return errors.New("remote object URI is already owned by a different actor") }
+    if err != nil && !errors.Is(err, sql.ErrNoRows) { return err }
     result, err := tx.ExecContext(ctx, `INSERT INTO remote_object_events(activity_id,object_uri,actor_uri,activity_type,activity_at)
         VALUES($1,$2,$3,$4,$5) ON CONFLICT(activity_id) DO NOTHING`,
         activityID, object.ObjectURI, object.ActorURI, activityType, object.ActivityAt)
@@ -83,6 +88,13 @@ func (s *Store) ApplyRemoteObjectDeletion(ctx context.Context, activityID, objec
     tx, err := s.db.BeginTx(ctx, nil)
     if err != nil { return err }
     defer tx.Rollback()
+    var existingActor string
+    err = tx.QueryRowContext(ctx, `SELECT actor_uri FROM remote_object_tombstones WHERE object_uri=$1`, objectURI).Scan(&existingActor)
+    if err == nil && existingActor != actorURI { return errors.New("remote object tombstone belongs to a different actor") }
+    if err != nil && !errors.Is(err, sql.ErrNoRows) { return err }
+    err = tx.QueryRowContext(ctx, `SELECT actor_uri FROM remote_objects WHERE object_uri=$1`, objectURI).Scan(&existingActor)
+    if err == nil && existingActor != actorURI { return errors.New("remote object URI is owned by a different actor") }
+    if err != nil && !errors.Is(err, sql.ErrNoRows) { return err }
     result, err := tx.ExecContext(ctx, `INSERT INTO remote_object_events(activity_id,object_uri,actor_uri,activity_type,activity_at)
         VALUES($1,$2,$3,'Delete',$4) ON CONFLICT(activity_id) DO NOTHING`, activityID, objectURI, actorURI, activityAt)
     if err != nil { return err }
