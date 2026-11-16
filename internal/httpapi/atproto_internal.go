@@ -69,6 +69,7 @@ func (s *Server) backendAuthorizedATProtoFeed(w http.ResponseWriter, r *http.Req
 	seen := make(map[string]struct{}, len(input.ActorDIDs))
 	for _, did := range input.ActorDIDs {
 		did = strings.TrimSpace(did)
+		input.ActorDIDs[i] = did
 		if !strings.HasPrefix(did, "did:plc:") && !strings.HasPrefix(did, "did:web:") {
 			writeError(w, http.StatusBadRequest, "invalid_did", "Every actor must be identified by a protocol DID")
 			return
