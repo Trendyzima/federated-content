@@ -74,7 +74,7 @@ func (s *Server) backendAuthorizedATProtoFeed(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusBadRequest, "invalid_did", "Every actor must be identified by a protocol DID")
 			return
 		}
-		if len(did) < 12 || len(did) > 512 || strings.ContainsAny(did, " \\t\\r\\n") {
+		if len(did) < 12 || len(did) > 512 || strings.ContainsAny(did, " \t\r\n") {
 			writeError(w, http.StatusBadRequest, "invalid_did", "A protocol DID is malformed")
 			return
 		}
