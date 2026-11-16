@@ -90,7 +90,7 @@ func (s *Server) backendAuthorizedATProtoFeed(w http.ResponseWriter, r *http.Req
 		return
 	}
 	for did, cursor := range input.Cursors {
-		if _, ok := seen[did]; !ok || len(cursor) > 512 || strings.ContainsAny(cursor, "\\r\\n") {
+		if _, ok := seen[did]; !ok || len(cursor) > 512 || strings.ContainsAny(cursor, "\r\n") {
 			writeError(w, http.StatusBadRequest, "invalid_cursor_map", "Each cursor must belong to an authorized DID and be no longer than 512 characters")
 			return
 		}
