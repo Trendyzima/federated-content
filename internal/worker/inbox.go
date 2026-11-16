@@ -277,7 +277,7 @@ type activityAddressList []string
 func (a *activityAddressList) UnmarshalJSON(raw []byte) error {
 	var single string
 	if json.Unmarshal(raw, &single) == nil {
-		if len(single) > 2048 {
+		if strings.TrimSpace(single) == "" || len(single) > 2048 || !isHTTPSActivityID(single) {
 			return errors.New("ActivityPub audience URI is too long")
 		}
 		*a = []string{single}
@@ -291,7 +291,7 @@ func (a *activityAddressList) UnmarshalJSON(raw []byte) error {
 		return errors.New("ActivityPub audience contains too many entries")
 	}
 	for _, value := range multiple {
-		if len(value) > 2048 {
+		if strings.TrimSpace(value) == "" || len(value) > 2048 || !isHTTPSActivityID(value) {
 			return errors.New("ActivityPub audience URI is too long")
 		}
 	}
