@@ -70,12 +70,8 @@ func (s *Server) backendAuthorizedATProtoFeed(w http.ResponseWriter, r *http.Req
 	for i, did := range input.ActorDIDs {
 		did = strings.TrimSpace(did)
 		input.ActorDIDs[i] = did
-		if !strings.HasPrefix(did, "did:plc:") && !strings.HasPrefix(did, "did:web:") {
-			writeError(w, http.StatusBadRequest, "invalid_did", "Every actor must be identified by a protocol DID")
-			return
-		}
-		if len(did) < 12 || len(did) > 512 || strings.ContainsAny(did, " \t\r\n") {
-			writeError(w, http.StatusBadRequest, "invalid_did", "A protocol DID is malformed")
+		if !atproto.ValidDID(did) {
+			writeError(w, http.StatusBadRequest, "invalid_did", "A valid AT Protocol DID is required")
 			return
 		}
 		if _, exists := seen[did]; exists {
