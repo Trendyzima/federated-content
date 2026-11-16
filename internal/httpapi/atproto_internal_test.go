@@ -27,7 +27,6 @@ func (f *recordingATProtoFeedClient) AuthorFeed(_ context.Context, handle string
 	return atproto.FeedPage{Profile: atproto.Profile{DID: "did:plc:222222222222222222222222", Handle: handle}, Source: "bluesky-atproto"}, nil
 }
 
-
 func (f *recordingATProtoFeedClient) AuthorFeedByDID(_ context.Context, did string, _ int, cursor string) (atproto.FeedPage, error) {
 	f.mu.Lock()
 	f.calls++
