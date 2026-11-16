@@ -9,7 +9,7 @@ func setValidEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("HTTP_ADDR", ":8081")
-	t.Setenv("PUBLIC_BASE_URL", "https://federation.testagram.site")
+	t.Setenv("PUBLIC_BASE_URL", "https://testagram.site")
 	t.Setenv("INSTANCE_DOMAIN", "testagram.site")
 	t.Setenv("SERVICE_ACTOR_USERNAME", "Testagram")
 	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
@@ -62,7 +62,7 @@ func TestDeliveryWorkerRejectsMalformedEnableFlag(t *testing.T) {
 func TestProductionRejectsHTTPBaseURL(t *testing.T) {
 	setValidEnvironment(t)
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("PUBLIC_BASE_URL", "http://federation.testagram.site")
+	t.Setenv("PUBLIC_BASE_URL", "http://testagram.site")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "HTTPS") {
 		t.Fatalf("expected HTTPS validation error, got %v", err)
@@ -80,8 +80,8 @@ func TestLoadRejectsMalformedActorUsername(t *testing.T) {
 
 func TestLoadRejectsPublicURLWithQueryOrFragment(t *testing.T) {
 	for _, rawURL := range []string{
-		"https://federation.testagram.site?redirect=https://evil.example",
-		"https://federation.testagram.site#fragment",
+		"https://testagram.site?redirect=https://evil.example",
+		"https://testagram.site#fragment",
 		"https://user:password@federation.testagram.site",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
@@ -104,7 +104,7 @@ func TestLoadRejectsUnrelatedFederationHost(t *testing.T) {
 
 func TestLoadAllowsFederationSubdomain(t *testing.T) {
 	setValidEnvironment(t)
-	t.Setenv("PUBLIC_BASE_URL", "https://federation.testagram.site")
+	t.Setenv("PUBLIC_BASE_URL", "https://testagram.site")
 	if _, err := Load(); err != nil {
 		t.Fatalf("expected federation subdomain to be allowed, got %v", err)
 	}
@@ -113,7 +113,7 @@ func TestLoadAllowsFederationSubdomain(t *testing.T) {
 func TestLoadRejectsNonDevelopmentHTTP(t *testing.T) {
 	setValidEnvironment(t)
 	t.Setenv("APP_ENV", "staging")
-	t.Setenv("PUBLIC_BASE_URL", "http://federation.testagram.site")
+	t.Setenv("PUBLIC_BASE_URL", "http://testagram.site")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected HTTP outside development/test to be rejected")
 	}
