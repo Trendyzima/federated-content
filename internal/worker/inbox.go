@@ -154,15 +154,15 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
         var object struct {
             ID string `json:"id"`
             Type string `json:"type"`
-            AttributedTo string `json:"attributedTo"`
+            AttributedTo json.RawMessage `json:"attributedTo"`
             Content string `json:"content"`
             Published string `json:"published"`
             Updated string `json:"updated"`
-            To []string `json:"to"`
-            CC []string `json:"cc"`
+            To activityAddressList `json:"to"`
+            CC activityAddressList `json:"cc"`
         }
         if err := json.Unmarshal(activity.Object, &object); err != nil ||
-            !isHTTPSActivityID(object.ID) || object.AttributedTo != item.ActorURI ||
+            !isHTTPSActivityID(object.ID) || !attributedToMatches(object.AttributedTo, item.ActorURI) ||
             (object.Type != "Note" && object.Type != "Article") ||
             strings.TrimSpace(object.Content) == "" || len(object.Content) > 20000 {
             return permanentInbox("remote Create/Update object failed identity or content validation")
@@ -177,7 +177,7 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
         }
         if err := objectStore.ApplyRemoteObjectActivity(ctx, activity.ID, activity.Type, store.RemoteObject{
             ObjectURI: object.ID, ActorURI: item.ActorURI, ObjectType: object.Type,
-            Content: object.Content, PublishedAt: publishedAt, Visibility: activityVisibility(object.To, object.CC),
+            Content: object.Content, PublishedAt: publishedAt, Visibility: activityVisibility([]string(object.To), []string(object.CC)),
             Payload: append([]byte(nil), activity.Object...), ActivityAt: activityAt,
         }); err != nil { return fmt.Errorf("persist remote object projection: %w", err) }
         return nil
@@ -256,6 +256,33 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 	default:
 		return permanentInbox("inbound activity type is durably quarantined until its Backend projection is implemented: " + activity.Type)
 	}
+}
+
+type activityAddressList []string
+
+func (a *activityAddressList) UnmarshalJSON(raw []byte) error {
+    var single string
+    if json.Unmarshal(raw, &single) == nil {
+        if len(single) > 2048 { return errors.New("ActivityPub audience URI is too long") }
+        *a = []string{single}
+        return nil
+    }
+    var multiple []string
+    if err := json.Unmarshal(raw, &multiple); err != nil { return errors.New("ActivityPub audience must be a URI or URI array") }
+    if len(multiple) > 100 { return errors.New("ActivityPub audience contains too many entries") }
+    for _, value := range multiple {
+        if len(value) > 2048 { return errors.New("ActivityPub audience URI is too long") }
+    }
+    *a = multiple
+    return nil
+}
+
+func attributedToMatches(raw json.RawMessage, actorURI string) bool {
+    var single string
+    if json.Unmarshal(raw, &single) == nil { return single == actorURI }
+    var multiple []string
+    if json.Unmarshal(raw, &multiple) != nil || len(multiple) != 1 { return false }
+    return multiple[0] == actorURI
 }
 
 func activityVisibility(to, cc []string) string {
