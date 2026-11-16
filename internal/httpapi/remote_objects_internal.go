@@ -7,7 +7,6 @@ import (
     "net/http"
     "strings"
 
-    "github.com/Trendyzima/federated-content/internal/store"
 )
 
 type backendRemoteObjectsRequest struct {
@@ -64,5 +63,3 @@ func (s *Server) backendAuthorizedRemoteObjects(w http.ResponseWriter, r *http.R
         "request_id": internalRequestID(r),
     })
 }
-
-var _ = store.RemoteObjectPage{}
