@@ -92,3 +92,38 @@ CREATE TABLE IF NOT EXISTS federation_outbox_dead_letters (
  payload JSONB NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
+-- Protocol-native remote objects are projections only. They never create local users/posts.
+CREATE TABLE IF NOT EXISTS remote_objects (
+    object_uri TEXT PRIMARY KEY,
+    actor_uri TEXT NOT NULL REFERENCES remote_actors(actor_uri) ON DELETE CASCADE,
+    object_type TEXT NOT NULL CHECK (object_type IN ('Note','Article')),
+    content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 20000),
+    published_at TIMESTAMPTZ,
+    visibility TEXT NOT NULL CHECK (visibility IN ('public','unlisted','followers','direct')),
+    payload JSONB NOT NULL CHECK (jsonb_typeof(payload)='object'),
+    last_activity_at TIMESTAMPTZ NOT NULL,
+    source_activity_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS remote_objects_public_timeline_idx
+    ON remote_objects(published_at DESC, object_uri)
+    WHERE deleted_at IS NULL AND visibility IN ('public','unlisted');
+
+CREATE TABLE IF NOT EXISTS remote_object_events (
+    activity_id TEXT PRIMARY KEY,
+    object_uri TEXT NOT NULL,
+    actor_uri TEXT NOT NULL,
+    activity_type TEXT NOT NULL CHECK (activity_type IN ('Create','Update','Delete')),
+    activity_at TIMESTAMPTZ NOT NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS remote_object_tombstones (
+    object_uri TEXT PRIMARY KEY,
+    actor_uri TEXT NOT NULL,
+    deleted_at TIMESTAMPTZ NOT NULL,
+    activity_id TEXT NOT NULL UNIQUE
+);
