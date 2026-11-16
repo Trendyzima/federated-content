@@ -14,8 +14,13 @@ import (
 )
 
 type backendATProtoFeedRequest struct {
-	ActorDIDs     []string `json:"actor_dids"`
-	LimitPerActor int      `json:"limit_per_actor"`
+	ActorDIDs     []string          `json:"actor_dids"`
+	LimitPerActor int               `json:"limit_per_actor"`
+	Cursors       map[string]string `json:"cursors,omitempty"`
+}
+
+type atprotoAuthorFeedClient interface {
+	AuthorFeedByDID(context.Context, string, int, string) (atproto.FeedPage, error)
 }
 
 type backendATProtoActorFeed struct {
@@ -80,6 +85,16 @@ func (s *Server) backendAuthorizedATProtoFeed(w http.ResponseWriter, r *http.Req
 		}
 		seen[did] = struct{}{}
 	}
+	if len(input.Cursors) > len(seen) {
+		writeError(w, http.StatusBadRequest, "invalid_cursor_map", "Cursors may only be supplied for authorized actor DIDs")
+		return
+	}
+	for did, cursor := range input.Cursors {
+		if _, ok := seen[did]; !ok || len(cursor) > 512 || strings.ContainsAny(cursor, "\\r\\n") {
+			writeError(w, http.StatusBadRequest, "invalid_cursor_map", "Each cursor must belong to an authorized DID and be no longer than 512 characters")
+			return
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
@@ -100,7 +115,7 @@ func (s *Server) backendAuthorizedATProtoFeed(w http.ResponseWriter, r *http.Req
 		go func() {
 			defer wg.Done()
 			for item := range jobs {
-				page, err := s.atproto.AuthorFeedByDID(ctx, item.did, input.LimitPerActor, "")
+				page, err := s.atproto.AuthorFeedByDID(ctx, item.did, input.LimitPerActor, input.Cursors[item.did])
 				if err != nil {
 					errs <- err
 					continue
