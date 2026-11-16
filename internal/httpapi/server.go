@@ -58,6 +58,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
 	s.mux.HandleFunc("POST /internal/v1/atproto/feed", s.backendAuthorizedATProtoFeed)
 	s.mux.HandleFunc("POST /internal/v1/remote-objects", s.backendAuthorizedRemoteObjects)
+	s.mux.HandleFunc("POST /internal/v1/remote-subscriptions/verify", s.verifyRemoteSubscription)
 	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}", s.atprotoActor)
 	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}/feed", s.atprotoAuthorFeed)
 }
