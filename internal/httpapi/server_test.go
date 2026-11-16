@@ -189,31 +189,18 @@ func TestObjectReturnsCanonicalBackendNote(t *testing.T) {
 }
 
 func TestSupportedInboxActivityTypeIsLimitedToImplementedProjections(t *testing.T) {
-	for _, activityType := range []string{"Follow", "Undo"} {
+	for _, activityType := range []string{"Follow", "Undo", "Create", "Update", "Delete"} {
 		if !supportedInboxActivityType(activityType) {
 			t.Errorf("implemented inbound activity %q was rejected", activityType)
 		}
 	}
-	for _, activityType := range []string{"Create", "Update", "Delete", "Like", "Announce", "Accept", "Reject", "Block"} {
+	for _, activityType := range []string{"Like", "Announce", "Accept", "Reject", "Block"} {
 		if supportedInboxActivityType(activityType) {
 			t.Errorf("unimplemented inbound activity %q was accepted", activityType)
 		}
 	}
 }
 
-func TestSupportedInboxActivityTypes(t *testing.T) {
-	for _, tc := range []struct {
-		activity string
-		want     bool
-	}{
-		{"Follow", true}, {"Undo", true}, {"Create", true}, {"Update", true}, {"Delete", true},
-		{"Like", false}, {"Announce", false}, {"Accept", false}, {"", false},
-	} {
-		if got := supportedInboxActivityType(tc.activity); got != tc.want {
-			t.Errorf("supportedInboxActivityType(%q)=%v want=%v", tc.activity, got, tc.want)
-		}
-	}
-}
 
 func TestBackendATProtoFeedRequiresFederationIngressCredential(t *testing.T) {
 	cfg := config.Config{
