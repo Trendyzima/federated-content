@@ -155,60 +155,69 @@ func (c *Client) ResolveProfile(ctx context.Context, handle string) (Profile, er
 }
 
 func (c *Client) AuthorFeed(ctx context.Context, handle string, limit int, cursor string) (FeedPage, error) {
-	profile, err := c.ResolveProfile(ctx, handle)
-	if err != nil {
-		return FeedPage{}, err
-	}
-	if limit < 1 || limit > 25 {
-		limit = 20
-	}
-	if len(cursor) > 512 || strings.ContainsAny(cursor, "\r\n") {
-		return FeedPage{}, errors.New("invalid AT Protocol feed cursor")
-	}
-	query := url.Values{"actor": []string{profile.DID}, "limit": []string{fmt.Sprint(limit)}, "filter": []string{"posts_with_replies"}}
-	if cursor != "" {
-		query.Set("cursor", cursor)
-	}
-	var raw struct {
-		Cursor string `json:"cursor"`
-		Feed   []struct {
-			Post struct {
-				URI    string  `json:"uri"`
-				CID    string  `json:"cid"`
-				Author Profile `json:"author"`
-				Record struct {
-					Text      string `json:"text"`
-					CreatedAt string `json:"createdAt"`
-				} `json:"record"`
-				IndexedAt   string `json:"indexedAt"`
-				ReplyCount  int64  `json:"replyCount"`
-				RepostCount int64  `json:"repostCount"`
-				LikeCount   int64  `json:"likeCount"`
-				QuoteCount  int64  `json:"quoteCount"`
-				Labels      []struct {
-					Val string `json:"val"`
-				} `json:"labels"`
-			} `json:"post"`
-		} `json:"feed"`
-	}
-	if err := c.getJSON(ctx, "/xrpc/app.bsky.feed.getAuthorFeed", query, &raw); err != nil {
-		return FeedPage{}, err
-	}
-	posts := make([]Post, 0, len(raw.Feed))
-	for _, entry := range raw.Feed {
-		p := entry.Post
-		if !strings.HasPrefix(p.URI, "at://") || p.CID == "" || !validDID(p.Author.DID) {
-			continue
-		}
-		labels := make([]string, 0, len(p.Labels))
-		for _, label := range p.Labels {
-			if label.Val != "" && len(label.Val) <= 80 {
-				labels = append(labels, label.Val)
-			}
-		}
-		posts = append(posts, Post{URI: p.URI, CID: p.CID, Text: p.Record.Text, CreatedAt: p.Record.CreatedAt,
-			IndexedAt: p.IndexedAt, Author: p.Author, ReplyCount: p.ReplyCount, RepostCount: p.RepostCount,
-			LikeCount: p.LikeCount, QuoteCount: p.QuoteCount, Labels: labels})
-	}
-	return FeedPage{Profile: profile, Posts: posts, Cursor: raw.Cursor, Source: "bluesky-atproto"}, nil
+    profile, err := c.ResolveProfile(ctx, handle)
+    if err != nil { return FeedPage{}, err }
+    return c.authorFeed(ctx, profile, limit, cursor)
+}
+
+// AuthorFeedByDID accepts only a protocol DID supplied by the authenticated
+// Backend. It resolves the profile by DID and verifies that the returned DID
+// is identical before fetching posts; handles are never identity assertions.
+func (c *Client) AuthorFeedByDID(ctx context.Context, did string, limit int, cursor string) (FeedPage, error) {
+    if !validDID(did) { return FeedPage{}, errors.New("invalid AT Protocol DID") }
+    var profile Profile
+    if err := c.getJSON(ctx, "/xrpc/app.bsky.actor.getProfile", url.Values{"actor": []string{did}}, &profile); err != nil {
+        return FeedPage{}, err
+    }
+    if !validDID(profile.DID) || profile.DID != did || !ValidHandle(strings.ToLower(profile.Handle)) {
+        return FeedPage{}, fmt.Errorf("%w: profile DID did not match Backend-authorized DID", ErrUnavailable)
+    }
+    return c.authorFeed(ctx, profile, limit, cursor)
+}
+
+func (c *Client) authorFeed(ctx context.Context, profile Profile, limit int, cursor string) (FeedPage, error) {
+    if limit < 1 || limit > 25 { limit = 20 }
+    if len(cursor) > 512 || strings.ContainsAny(cursor, "\\r\\n") {
+        return FeedPage{}, errors.New("invalid AT Protocol feed cursor")
+    }
+    query := url.Values{"actor": []string{profile.DID}, "limit": []string{fmt.Sprint(limit)}, "filter": []string{"posts_with_replies"}}
+    if cursor != "" { query.Set("cursor", cursor) }
+    var raw struct {
+        Cursor string `json:"cursor"`
+        Feed []struct {
+            Post struct {
+                URI string `json:"uri"`
+                CID string `json:"cid"`
+                Author Profile `json:"author"`
+                Record struct {
+                    Text string `json:"text"`
+                    CreatedAt string `json:"createdAt"`
+                } `json:"record"`
+                IndexedAt string `json:"indexedAt"`
+                ReplyCount int64 `json:"replyCount"`
+                RepostCount int64 `json:"repostCount"`
+                LikeCount int64 `json:"likeCount"`
+                QuoteCount int64 `json:"quoteCount"`
+                Labels []struct { Val string `json:"val"` } `json:"labels"`
+            } `json:"post"`
+        } `json:"feed"`
+    }
+    if err := c.getJSON(ctx, "/xrpc/app.bsky.feed.getAuthorFeed", query, &raw); err != nil { return FeedPage{}, err }
+    posts := make([]Post, 0, len(raw.Feed))
+    for _, entry := range raw.Feed {
+        p := entry.Post
+        if !strings.HasPrefix(p.URI, "at://"+profile.DID+"/app.bsky.feed.post/") ||
+            len(p.URI) > 2048 || p.CID == "" || len(p.CID) > 256 ||
+            !validDID(p.Author.DID) || p.Author.DID != profile.DID {
+            continue
+        }
+        labels := make([]string, 0, len(p.Labels))
+        for _, label := range p.Labels {
+            if label.Val != "" && len(label.Val) <= 80 { labels = append(labels, label.Val) }
+        }
+        posts = append(posts, Post{URI: p.URI, CID: p.CID, Text: p.Record.Text, CreatedAt: p.Record.CreatedAt,
+            IndexedAt: p.IndexedAt, Author: p.Author, ReplyCount: p.ReplyCount, RepostCount: p.RepostCount,
+            LikeCount: p.LikeCount, QuoteCount: p.QuoteCount, Labels: labels})
+    }
+    return FeedPage{Profile: profile, Posts: posts, Cursor: raw.Cursor, Source: "bluesky-atproto"}, nil
 }
