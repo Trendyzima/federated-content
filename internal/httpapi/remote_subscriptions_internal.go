@@ -103,10 +103,10 @@ func (s *Server) verifyRemoteSubscription(w http.ResponseWriter, r *http.Request
 
 	if err := s.backend.VerifyRemoteSubscription(ctx, backend.RemoteSubscriptionVerification{
 		LocalUserID: input.LocalUserID,
-		Protocol: input.Protocol,
-		Identity: input.Identity,
-		Handle: handle,
-		Verified: true,
+		Protocol:    input.Protocol,
+		Identity:    input.Identity,
+		Handle:      handle,
+		Verified:    true,
 	}); err != nil {
 		s.logger.Error("Backend rejected remote subscription verification callback", "error", err)
 		writeError(w, http.StatusBadGateway, "backend_verification_unavailable", "Backend could not persist the verified remote identity")
@@ -114,9 +114,9 @@ func (s *Server) verifyRemoteSubscription(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true,
-		"data": map[string]string{"protocol": input.Protocol, "identity": input.Identity, "handle": handle, "verification_status": "verified"},
-		"error": nil,
+		"ok":         true,
+		"data":       map[string]string{"protocol": input.Protocol, "identity": input.Identity, "handle": handle, "verification_status": "verified"},
+		"error":      nil,
 		"request_id": internalRequestID(r),
 	})
 }
