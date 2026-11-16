@@ -272,12 +272,23 @@ func (w *InboxWorker) process(ctx context.Context, item store.InboxActivity) err
 	}
 }
 
+func validActivityAddress(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" {
+		return false
+	}
+	if u.Fragment != "" {
+		return raw == "https://www.w3.org/ns/activitystreams#Public"
+	}
+	return true
+}
+
 type activityAddressList []string
 
 func (a *activityAddressList) UnmarshalJSON(raw []byte) error {
 	var single string
 	if json.Unmarshal(raw, &single) == nil {
-		if strings.TrimSpace(single) == "" || len(single) > 2048 || !isHTTPSActivityID(single) {
+		if strings.TrimSpace(single) == "" || len(single) > 2048 || !validActivityAddress(single) {
 			return errors.New("ActivityPub audience URI is too long")
 		}
 		*a = []string{single}
@@ -291,7 +302,7 @@ func (a *activityAddressList) UnmarshalJSON(raw []byte) error {
 		return errors.New("ActivityPub audience contains too many entries")
 	}
 	for _, value := range multiple {
-		if strings.TrimSpace(value) == "" || len(value) > 2048 || !isHTTPSActivityID(value) {
+		if strings.TrimSpace(value) == "" || len(value) > 2048 || !validActivityAddress(value) {
 			return errors.New("ActivityPub audience URI is too long")
 		}
 	}
