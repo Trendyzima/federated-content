@@ -62,7 +62,7 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	copyClient := *client
-	if copyClient.Timeout <= 0 || copyClient.Timeout > 10*time.Second {
+	if copyClient.Timeout <= 0 || copyClient.Timeout > 20*time.Second {
 		copyClient.Timeout = 5 * time.Second
 	}
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
