@@ -100,48 +100,60 @@ func TestValidHandle(t *testing.T) {
 }
 
 func TestAuthorFeedByDIDVerifiesProfileIdentityAndReturnsOnlyThatAuthorsPosts(t *testing.T) {
-    const did = "did:plc:abcdefghijklmnopqrstuvwx"
-    mux := http.NewServeMux()
-    mux.HandleFunc("/xrpc/app.bsky.actor.getProfile", func(w http.ResponseWriter, r *http.Request) {
-        if r.URL.Query().Get("actor") != did { t.Errorf("unexpected actor DID: %s", r.URL.RawQuery) }
-        if r.Header.Get("Authorization") != "" { t.Error("public read must not send user credentials") }
-        _ = json.NewEncoder(w).Encode(map[string]any{"did": did, "handle": "alice.bsky.social"})
-    })
-    mux.HandleFunc("/xrpc/app.bsky.feed.getAuthorFeed", func(w http.ResponseWriter, r *http.Request) {
-        if r.URL.Query().Get("actor") != did { t.Errorf("feed actor mismatch: %s", r.URL.RawQuery) }
-        _ = json.NewEncoder(w).Encode(map[string]any{"feed": []any{
-            map[string]any{"post": map[string]any{
-                "uri": "at://"+did+"/app.bsky.feed.post/1", "cid": "bafy-one",
-                "author": map[string]any{"did": did, "handle": "alice.bsky.social"},
-                "record": map[string]any{"text": "authorized author feed", "createdAt": "2026-11-16T08:00:00Z"},
-            }},
-            map[string]any{"post": map[string]any{
-                "uri": "at://did:plc:zyxwvutsrqponmlkjihgfedcba/app.bsky.feed.post/2", "cid": "bafy-two",
-                "author": map[string]any{"did": "did:plc:zyxwvutsrqponmlkjihgfedcba", "handle": "other.bsky.social"},
-                "record": map[string]any{"text": "must not leak", "createdAt": "2026-11-16T08:01:00Z"},
-            }},
-        }})
-    })
-    server := httptest.NewServer(mux)
-    defer server.Close()
-    client, err := NewClientWithBaseURL(server.URL, server.Client())
-    if err != nil { t.Fatal(err) }
-    page, err := client.AuthorFeedByDID(context.Background(), did, 10, "")
-    if err != nil { t.Fatal(err) }
-    if page.Profile.DID != did || len(page.Posts) != 1 || page.Posts[0].Text != "authorized author feed" {
-        t.Fatalf("unexpected DID-bound feed: %#v", page)
-    }
+	const did = "did:plc:abcdefghijklmnopqrstuvwx"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/xrpc/app.bsky.actor.getProfile", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("actor") != did {
+			t.Errorf("unexpected actor DID: %s", r.URL.RawQuery)
+		}
+		if r.Header.Get("Authorization") != "" {
+			t.Error("public read must not send user credentials")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"did": did, "handle": "alice.bsky.social"})
+	})
+	mux.HandleFunc("/xrpc/app.bsky.feed.getAuthorFeed", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("actor") != did {
+			t.Errorf("feed actor mismatch: %s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"feed": []any{
+			map[string]any{"post": map[string]any{
+				"uri": "at://" + did + "/app.bsky.feed.post/1", "cid": "bafy-one",
+				"author": map[string]any{"did": did, "handle": "alice.bsky.social"},
+				"record": map[string]any{"text": "authorized author feed", "createdAt": "2026-11-16T08:00:00Z"},
+			}},
+			map[string]any{"post": map[string]any{
+				"uri": "at://did:plc:zyxwvutsrqponmlkjihgfedcba/app.bsky.feed.post/2", "cid": "bafy-two",
+				"author": map[string]any{"did": "did:plc:zyxwvutsrqponmlkjihgfedcba", "handle": "other.bsky.social"},
+				"record": map[string]any{"text": "must not leak", "createdAt": "2026-11-16T08:01:00Z"},
+			}},
+		}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client, err := NewClientWithBaseURL(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.AuthorFeedByDID(context.Background(), did, 10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Profile.DID != did || len(page.Posts) != 1 || page.Posts[0].Text != "authorized author feed" {
+		t.Fatalf("unexpected DID-bound feed: %#v", page)
+	}
 }
 
 func TestAuthorFeedByDIDRejectsProfileDIDSubstitution(t *testing.T) {
-    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        _ = json.NewEncoder(w).Encode(map[string]any{"did": "did:plc:zyxwvutsrqponmlkjihgfedcba", "handle": "other.bsky.social"})
-    }))
-    defer server.Close()
-    client, err := NewClientWithBaseURL(server.URL, server.Client())
-    if err != nil { t.Fatal(err) }
-    _, err = client.AuthorFeedByDID(context.Background(), "did:plc:abcdefghijklmnopqrstuvwx", 10, "")
-    if err == nil || !strings.Contains(err.Error(), "DID did not match") {
-        t.Fatalf("expected DID substitution rejection, got %v", err)
-    }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"did": "did:plc:zyxwvutsrqponmlkjihgfedcba", "handle": "other.bsky.social"})
+	}))
+	defer server.Close()
+	client, err := NewClientWithBaseURL(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AuthorFeedByDID(context.Background(), "did:plc:abcdefghijklmnopqrstuvwx", 10, "")
+	if err == nil || !strings.Contains(err.Error(), "DID did not match") {
+		t.Fatalf("expected DID substitution rejection, got %v", err)
+	}
 }
