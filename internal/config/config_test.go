@@ -102,9 +102,21 @@ func TestLoadRejectsUnrelatedFederationHost(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsToCanonicalApex(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("PUBLIC_BASE_URL", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicBaseURL != "https://testagram.site" {
+		t.Fatalf("canonical public origin = %q, want https://testagram.site", cfg.PublicBaseURL)
+	}
+}
+
 func TestLoadAllowsFederationSubdomain(t *testing.T) {
 	setValidEnvironment(t)
-	t.Setenv("PUBLIC_BASE_URL", "https://testagram.site")
+	t.Setenv("PUBLIC_BASE_URL", "https://federation.testagram.site")
 	if _, err := Load(); err != nil {
 		t.Fatalf("expected federation subdomain to be allowed, got %v", err)
 	}
