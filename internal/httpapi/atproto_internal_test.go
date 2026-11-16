@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Trendyzima/federated-content/internal/atproto"
@@ -13,13 +14,16 @@ import (
 )
 
 type recordingATProtoFeedClient struct {
+	mu      sync.Mutex
 	cursors map[string]string
 	calls   int
 }
 
 func (f *recordingATProtoFeedClient) AuthorFeedByDID(_ context.Context, did string, _ int, cursor string) (atproto.FeedPage, error) {
+	f.mu.Lock()
 	f.calls++
 	f.cursors[did] = cursor
+	f.mu.Unlock()
 	return atproto.FeedPage{
 		Profile: atproto.Profile{DID: did, Handle: "alice.bsky.social"},
 		Cursor:  "next-" + did,
