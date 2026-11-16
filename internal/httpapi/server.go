@@ -56,6 +56,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /objects/{post_id}", s.object)
 	s.mux.HandleFunc("POST /users/{username}/inbox", s.inbox)
 	s.mux.HandleFunc("POST /internal/v1/activities", s.enqueueAuthorizedActivity)
+	s.mux.HandleFunc("POST /internal/v1/atproto/feed", s.backendAuthorizedATProtoFeed)
 	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}", s.atprotoActor)
 	s.mux.HandleFunc("GET /v1/atproto/actors/{handle}/feed", s.atprotoAuthorFeed)
 }
