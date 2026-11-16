@@ -18,21 +18,21 @@ func TestAuthorFeedUsesOfficialXRPCShapeAndReturnsNormalizedPosts(t *testing.T) 
 		if r.Header.Get("Authorization") != "" {
 			t.Error("public profile lookup must not send user credentials")
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"did": "did:plc:abcdefghijklmnopqrstuvwx"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"did": "did:plc:222222222222222222222222"})
 	})
 	mux.HandleFunc("/xrpc/app.bsky.actor.getProfile", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("actor") != "did:plc:abcdefghijklmnopqrstuvwx" {
+		if r.URL.Query().Get("actor") != "did:plc:222222222222222222222222" {
 			t.Errorf("profile did mismatch: %s", r.URL.RawQuery)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"did": "did:plc:abcdefghijklmnopqrstuvwx", "handle": "alice.bsky.social", "displayName": "Alice"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"did": "did:plc:222222222222222222222222", "handle": "alice.bsky.social", "displayName": "Alice"})
 	})
 	mux.HandleFunc("/xrpc/app.bsky.feed.getAuthorFeed", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("actor") != "did:plc:abcdefghijklmnopqrstuvwx" || r.URL.Query().Get("limit") != "10" {
+		if r.URL.Query().Get("actor") != "did:plc:222222222222222222222222" || r.URL.Query().Get("limit") != "10" {
 			t.Errorf("feed query mismatch: %s", r.URL.RawQuery)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"cursor": "next-page", "feed": []any{map[string]any{"post": map[string]any{
-			"uri": "at://did:plc:abcdefghijklmnopqrstuvwx/app.bsky.feed.post/abc", "cid": "bafyreia",
-			"author":     map[string]any{"did": "did:plc:abcdefghijklmnopqrstuvwx", "handle": "alice.bsky.social"},
+			"uri": "at://did:plc:222222222222222222222222/app.bsky.feed.post/abc", "cid": "bafyreia",
+			"author":     map[string]any{"did": "did:plc:222222222222222222222222", "handle": "alice.bsky.social"},
 			"record":     map[string]any{"text": "Hello from Bluesky", "createdAt": "2026-11-15T10:00:00Z"},
 			"replyCount": 2, "repostCount": 3, "likeCount": 4, "quoteCount": 1,
 			"labels": []any{map[string]string{"val": "graphic-content"}},
@@ -48,7 +48,7 @@ func TestAuthorFeedUsesOfficialXRPCShapeAndReturnsNormalizedPosts(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Profile.DID != "did:plc:abcdefghijklmnopqrstuvwx" || page.Profile.DisplayName != "Alice" {
+	if page.Profile.DID != "did:plc:222222222222222222222222" || page.Profile.DisplayName != "Alice" {
 		t.Fatalf("unexpected profile: %#v", page.Profile)
 	}
 	if page.Cursor != "next-page" || page.Source != "bluesky-atproto" || len(page.Posts) != 1 {
@@ -100,7 +100,7 @@ func TestValidHandle(t *testing.T) {
 }
 
 func TestAuthorFeedByDIDVerifiesProfileIdentityAndReturnsOnlyThatAuthorsPosts(t *testing.T) {
-	const did = "did:plc:abcdefghijklmnopqrstuvwx"
+	const did = "did:plc:222222222222222222222222"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/xrpc/app.bsky.actor.getProfile", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("actor") != did {
@@ -122,8 +122,8 @@ func TestAuthorFeedByDIDVerifiesProfileIdentityAndReturnsOnlyThatAuthorsPosts(t 
 				"record": map[string]any{"text": "authorized author feed", "createdAt": "2026-11-16T08:00:00Z"},
 			}},
 			map[string]any{"post": map[string]any{
-				"uri": "at://did:plc:zyxwvutsrqponmlkjihgfedcba/app.bsky.feed.post/2", "cid": "bafy-two",
-				"author": map[string]any{"did": "did:plc:zyxwvutsrqponmlkjihgfedcba", "handle": "other.bsky.social"},
+				"uri": "at://did:plc:333333333333333333333333/app.bsky.feed.post/2", "cid": "bafy-two",
+				"author": map[string]any{"did": "did:plc:333333333333333333333333", "handle": "other.bsky.social"},
 				"record": map[string]any{"text": "must not leak", "createdAt": "2026-11-16T08:01:00Z"},
 			}},
 		}})
@@ -145,14 +145,14 @@ func TestAuthorFeedByDIDVerifiesProfileIdentityAndReturnsOnlyThatAuthorsPosts(t 
 
 func TestAuthorFeedByDIDRejectsProfileDIDSubstitution(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"did": "did:plc:zyxwvutsrqponmlkjihgfedcba", "handle": "other.bsky.social"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"did": "did:plc:333333333333333333333333", "handle": "other.bsky.social"})
 	}))
 	defer server.Close()
 	client, err := NewClientWithBaseURL(server.URL, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.AuthorFeedByDID(context.Background(), "did:plc:abcdefghijklmnopqrstuvwx", 10, "")
+	_, err = client.AuthorFeedByDID(context.Background(), "did:plc:222222222222222222222222", 10, "")
 	if err == nil || !strings.Contains(err.Error(), "DID did not match") {
 		t.Fatalf("expected DID substitution rejection, got %v", err)
 	}
