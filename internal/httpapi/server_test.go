@@ -208,7 +208,7 @@ func TestBackendATProtoFeedRequiresFederationIngressCredential(t *testing.T) {
 		FederationIngressToken: "a-long-test-only-backend-to-federation-token",
 	}
 	handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(`{"actor_dids":["did:plc:abcdefghijklmnopqrstuvwx"]}`))
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(`{"actor_dids":["did:plc:222222222222222222222222"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -225,7 +225,7 @@ func TestBackendATProtoFeedRejectsDuplicateOrMalformedDIDs(t *testing.T) {
 	}
 	handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	for _, body := range []string{
-		`{"actor_dids":["did:plc:abcdefghijklmnopqrstuvwx","did:plc:abcdefghijklmnopqrstuvwx"]}`,
+		`{"actor_dids":["did:plc:222222222222222222222222","did:plc:222222222222222222222222"]}`,
 		`{"actor_dids":["https://evil.example"]}`,
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/internal/v1/atproto/feed", strings.NewReader(body))
