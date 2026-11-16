@@ -200,3 +200,14 @@ func TestSupportedInboxActivityTypeIsLimitedToImplementedProjections(t *testing.
 		}
 	}
 }
+
+func TestSupportedInboxActivityTypes(t *testing.T) {
+    for _, tc := range []struct { activity string; want bool }{
+        {"Follow", true}, {"Undo", true}, {"Create", true}, {"Update", true}, {"Delete", true},
+        {"Like", false}, {"Announce", false}, {"Accept", false}, {"", false},
+    } {
+        if got := supportedInboxActivityType(tc.activity); got != tc.want {
+            t.Errorf("supportedInboxActivityType(%q)=%v want=%v", tc.activity, got, tc.want)
+        }
+    }
+}
