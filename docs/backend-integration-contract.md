@@ -49,7 +49,7 @@ The federation service must fetch the canonical post and recipient/follower info
 
 ## Service authentication
 
-Use private network routing plus mTLS where available. If signed service tokens are used, validate issuer, audience, expiry, key ID, and replay protection. Never place internal service credentials in XClone or browser-visible environment variables.
+Use private network routing plus mTLS where available. If signed service tokens are used, validate issuer, audience, expiry, key ID, and replay protection. Never place internal service credentials in browser-visible or mobile environment variables.
 
 ## Contract rollout
 
@@ -65,4 +65,4 @@ This document defines a contract proposal; it does not claim that the backend en
 
 ## Private API client usage
 
-The Federation service uses the Backend private API for actor discovery, readiness and durable published-post outbox polling. Every request carries the internal bearer, API version `1` and a unique request ID. Outbox polling uses bounded pages (`limit <= 99`) and persists `next_cursor` even when `has_more=false`, so the next poll can resume without replaying the entire event history. The Federation service never reads Appwrite/Neon directly.
+The Federation service uses the Backend private API for actor discovery, readiness and durable published-post outbox polling. Every request carries the internal bearer, API version `1` and a unique request ID. Outbox polling uses bounded pages (`limit <= 99`) and persists `next_cursor` even when `has_more=false`, so the next poll can resume without replaying the entire event history. The Federation service never reads Backend PostgreSQL, native identity/session tables or user access tokens directly. It uses only the dedicated direction-specific Backend service bearer.
