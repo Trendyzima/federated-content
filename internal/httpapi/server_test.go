@@ -253,5 +253,3 @@ func TestInboxRejectsAcceptanceWhenWorkersAreNotEnabled(t *testing.T) {
 		t.Fatalf("expected fail-closed 503 without the delivery worker, got %d %s", rec.Code, rec.Body.String())
 	}
 }
-
-
