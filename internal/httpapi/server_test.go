@@ -117,8 +117,9 @@ func TestInboxFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/users/testagram/inbox", strings.NewReader("{}"))
 	testServer().ServeHTTP(rec, req)
-	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "inbox_unavailable") {
-		t.Fatalf("expected fail-closed 503 without durable inbox storage, got %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "inbox_unavailable") ||
+		!strings.Contains(rec.Body.String(), "acceptance is disabled") {
+		t.Fatalf("expected fail-closed 503 while public inbox acceptance is disabled, got %d %s", rec.Code, rec.Body.String())
 	}
 }
 
