@@ -27,6 +27,7 @@ type Config struct {
 	DeliveryWorkerEnabled  bool
 	OutboxPollerEnabled    bool
 	InboxWorkerEnabled     bool
+	InboxAcceptEnabled     bool
 }
 
 func Load() (Config, error) {
@@ -59,6 +60,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED must be true or false")
 	}
 	cfg.InboxWorkerEnabled = inboxWorkerEnabled
+	inboxAcceptEnabled, err := strconv.ParseBool(env("FEDERATION_INBOX_ACCEPT_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("FEDERATION_INBOX_ACCEPT_ENABLED must be true or false")
+	}
+	cfg.InboxAcceptEnabled = inboxAcceptEnabled
 	if cfg.HTTPAddr == "" || cfg.InstanceDomain == "" || cfg.ServiceActorUsername == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR, INSTANCE_DOMAIN and SERVICE_ACTOR_USERNAME must not be empty")
 	}
@@ -78,6 +84,9 @@ func Load() (Config, error) {
 	}
 	if cfg.InboxWorkerEnabled && !cfg.DeliveryWorkerEnabled {
 		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires FEDERATION_DELIVERY_WORKER_ENABLED")
+	}
+	if cfg.InboxAcceptEnabled && !cfg.InboxWorkerEnabled {
+		return Config{}, fmt.Errorf("FEDERATION_INBOX_ACCEPT_ENABLED requires FEDERATION_INBOX_WORKER_ENABLED")
 	}
 	if cfg.InboxWorkerEnabled && cfg.FederationDatabaseURL == "" {
 		return Config{}, fmt.Errorf("FEDERATION_INBOX_WORKER_ENABLED requires FEDERATION_DATABASE_URL")

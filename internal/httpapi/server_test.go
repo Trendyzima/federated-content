@@ -117,8 +117,9 @@ func TestInboxFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/users/testagram/inbox", strings.NewReader("{}"))
 	testServer().ServeHTTP(rec, req)
-	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "inbox_unavailable") {
-		t.Fatalf("expected fail-closed 503 without durable inbox storage, got %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "inbox_unavailable") ||
+		!strings.Contains(rec.Body.String(), "acceptance is disabled") {
+		t.Fatalf("expected fail-closed 503 while public inbox acceptance is disabled, got %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -236,5 +237,19 @@ func TestBackendATProtoFeedRejectsDuplicateOrMalformedDIDs(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("invalid actor list accepted: %d %s", rec.Code, rec.Body.String())
 		}
+	}
+}
+func TestInboxRejectsAcceptanceWhenWorkersAreNotEnabled(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site",
+		InstanceDomain: "testagram.site", ServiceActorUsername: "testagram",
+		InboxAcceptEnabled: true, InboxWorkerEnabled: true, DeliveryWorkerEnabled: false,
+	}
+	handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/users/alice/inbox", strings.NewReader("{}"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "inbox_unavailable") {
+		t.Fatalf("expected fail-closed 503 without the delivery worker, got %d %s", rec.Code, rec.Body.String())
 	}
 }

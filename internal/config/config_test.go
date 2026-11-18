@@ -15,6 +15,7 @@ func setValidEnvironment(t *testing.T) {
 	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "")
 	t.Setenv("FEDERATION_OUTBOX_POLLER_ENABLED", "")
 	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "")
+	t.Setenv("FEDERATION_INBOX_ACCEPT_ENABLED", "")
 	t.Setenv("FEDERATION_DATABASE_URL", "")
 	t.Setenv("BACKEND_INTERNAL_URL", "")
 	t.Setenv("BACKEND_INTERNAL_TOKEN", "")
@@ -225,5 +226,49 @@ func TestInboxWorkerAcceptsCompletePrivateRuntimeConfig(t *testing.T) {
 	}
 	if !cfg.InboxWorkerEnabled || !cfg.DeliveryWorkerEnabled {
 		t.Fatal("complete inbox runtime config was not enabled")
+	}
+}
+
+func TestInboxAcceptanceIsOptIn(t *testing.T) {
+	setValidEnvironment(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.InboxAcceptEnabled {
+		t.Fatal("public inbox acceptance must remain disabled by default")
+	}
+}
+
+func TestInboxAcceptanceRequiresTheDurableInboxWorker(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_INBOX_ACCEPT_ENABLED", "true")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "FEDERATION_INBOX_WORKER_ENABLED") {
+		t.Fatalf("expected inbox acceptance to require its durable worker, got %v", err)
+	}
+}
+
+func TestInboxAcceptanceRejectsMalformedFlag(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_INBOX_ACCEPT_ENABLED", "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected malformed inbox acceptance flag to be rejected")
+	}
+}
+
+func TestInboxAcceptanceRequiresCompleteRuntime(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("FEDERATION_INBOX_ACCEPT_ENABLED", "true")
+	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "true")
+	t.Setenv("FEDERATION_DELIVERY_WORKER_ENABLED", "true")
+	t.Setenv("FEDERATION_DATABASE_URL", "postgresql://test:test@localhost/federation?sslmode=disable")
+	t.Setenv("BACKEND_INTERNAL_URL", "https://api.testagram.site")
+	t.Setenv("BACKEND_INTERNAL_TOKEN", "ci-private-backend-token-that-is-long-enough")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.InboxAcceptEnabled || !cfg.InboxWorkerEnabled || !cfg.DeliveryWorkerEnabled {
+		t.Fatal("complete inbound federation runtime was not enabled")
 	}
 }

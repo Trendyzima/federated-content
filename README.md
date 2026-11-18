@@ -119,3 +119,22 @@ For local development, configure `PUBLIC_BASE_URL`, `INSTANCE_DOMAIN`, `FEDERATI
 - [Testagram Data Centre](https://github.com/Trendyzima/Testagram-data-centre-)
 - [Testagram CDN](https://github.com/Trendyzima/cdn-)
 - [Testagram API contract control plane](https://github.com/Trendyzima/testagram-api)
+
+
+## Inbound ActivityPub activation gate
+
+Public `POST /users/{username}/inbox` acceptance is disabled by default via
+`FEDERATION_INBOX_ACCEPT_ENABLED=false`. The HTTP inbox will return a
+fail-closed 503 until the operator explicitly enables acceptance. Setting it
+to `true` requires `FEDERATION_INBOX_WORKER_ENABLED=true`; the worker itself
+requires `FEDERATION_DELIVERY_WORKER_ENABLED=true`, durable Federation
+PostgreSQL and the private Backend integration. This prevents remote peers
+from receiving a successful 202 while signed activities are only accumulating
+in an unprocessed inbox.
+
+Keep inbound acceptance, the inbox worker, the outbound delivery worker and
+the Backend outbox poller disabled until the independent staging peer
+interoperability tests, signature/replay checks, durable processing, follow /
+undo projection, remote-object authorization and dead-letter operations have
+passed. The API contract control plane and static CI do not activate these
+flags.
