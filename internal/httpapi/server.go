@@ -310,6 +310,10 @@ func (s *Server) object(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) inbox(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.InboxAcceptEnabled {
+		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Inbound ActivityPub acceptance is disabled until durable inbox and delivery workers are enabled")
+		return
+	}
 	if s.state == nil || s.keys == nil {
 		writeError(w, http.StatusServiceUnavailable, "inbox_unavailable", "Durable signed inbox processing is not configured")
 		return
