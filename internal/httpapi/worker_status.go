@@ -15,8 +15,8 @@ func (s *Server) internalWorkerStatus(w http.ResponseWriter, r *http.Request) {
 		"workers": map[string]bool{
 			"delivery_worker": s.cfg.DeliveryWorkerEnabled,
 			"outbox_poller":   s.cfg.OutboxPollerEnabled,
-			"inbox_worker":   s.cfg.InboxWorkerEnabled,
-			"inbox_accept":   s.cfg.InboxAcceptEnabled,
+			"inbox_worker":    s.cfg.InboxWorkerEnabled,
+			"inbox_accept":    s.cfg.InboxAcceptEnabled,
 		},
 	})
 }
