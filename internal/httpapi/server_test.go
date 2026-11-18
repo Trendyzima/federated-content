@@ -20,6 +20,37 @@ func testServer() http.Handler {
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
+func TestInternalWorkerStatusRequiresIngressCredentialAndReportsConfiguredWorkers(t *testing.T) {
+	const token = "test-federation-ingress-token-with-at-least-32-characters"
+	cfg := config.Config{
+		FederationIngressToken: token,
+		DeliveryWorkerEnabled: true,
+		OutboxPollerEnabled: true,
+		InboxWorkerEnabled: true,
+		InboxAcceptEnabled: true,
+	}
+	handler := NewWithRuntime(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
+
+	unauthorized := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/internal/v1/worker-status", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without the Backend ingress bearer, got %d %s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/worker-status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with the Backend ingress bearer, got %d %s", rec.Code, rec.Body.String())
+	}
+	for _, expected := range []string{`"delivery_worker":true`, `"outbox_poller":true`, `"inbox_worker":true`, `"inbox_accept":true`} {
+		if !strings.Contains(rec.Body.String(), expected) {
+			t.Fatalf("worker status omitted %s: %s", expected, rec.Body.String())
+		}
+	}
+}
+
 func TestHealth(t *testing.T) {
 	rec := httptest.NewRecorder()
 	testServer().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
