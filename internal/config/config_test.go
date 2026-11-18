@@ -229,7 +229,6 @@ func TestInboxWorkerAcceptsCompletePrivateRuntimeConfig(t *testing.T) {
 	}
 }
 
-
 func TestInboxAcceptanceIsOptIn(t *testing.T) {
 	setValidEnvironment(t)
 	cfg, err := Load()
