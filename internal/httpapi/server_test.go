@@ -24,10 +24,10 @@ func TestInternalWorkerStatusRequiresIngressCredentialAndReportsConfiguredWorker
 	const token = "test-federation-ingress-token-with-at-least-32-characters"
 	cfg := config.Config{
 		FederationIngressToken: token,
-		DeliveryWorkerEnabled: true,
-		OutboxPollerEnabled: true,
-		InboxWorkerEnabled: true,
-		InboxAcceptEnabled: true,
+		DeliveryWorkerEnabled:  true,
+		OutboxPollerEnabled:    true,
+		InboxWorkerEnabled:     true,
+		InboxAcceptEnabled:     true,
 	}
 	handler := NewWithRuntime(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 
