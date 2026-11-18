@@ -141,7 +141,7 @@ func TestLocalActorEndpointsRecheckFederationOptIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site", InstanceDomain: "testagram.site", ServiceActorUsername: "testagram", ServiceActorName: "Testagram"}
+	cfg := config.Config{HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site", InstanceDomain: "testagram.site", ServiceActorUsername: "testagram", ServiceActorName: "Testagram", InboxAcceptEnabled: true, InboxWorkerEnabled: true, DeliveryWorkerEnabled: true}
 	handler := NewWithRuntime(cfg, slog.New(slog.NewTextHandler(os.Stdout, nil)), state, backendClient)
 
 	finger := httptest.NewRecorder()
