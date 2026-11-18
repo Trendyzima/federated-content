@@ -239,3 +239,19 @@ func TestBackendATProtoFeedRejectsDuplicateOrMalformedDIDs(t *testing.T) {
 		}
 	}
 }
+func TestInboxRejectsAcceptanceWhenWorkersAreNotEnabled(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr: ":8081", PublicBaseURL: "https://federation.testagram.site",
+		InstanceDomain: "testagram.site", ServiceActorUsername: "testagram",
+		InboxAcceptEnabled: true, InboxWorkerEnabled: true, DeliveryWorkerEnabled: false,
+	}
+	handler := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/users/alice/inbox", strings.NewReader("{}"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "inbox_unavailable") {
+		t.Fatalf("expected fail-closed 503 without the delivery worker, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+
