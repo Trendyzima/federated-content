@@ -121,8 +121,8 @@ func (s *Server) nodeInfo(w http.ResponseWriter, _ *http.Request) {
 		// Public registration is deliberately reported as closed until the
 		// canonical Backend registration journey is production-verified.
 		"openRegistrations": false,
-		"usage": map[string]any{"users": map[string]any{}},
-		"metadata": map[string]any{},
+		"usage":             map[string]any{"users": map[string]any{}},
+		"metadata":          map[string]any{},
 	})
 }
 
