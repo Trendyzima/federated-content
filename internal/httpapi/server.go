@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -50,6 +51,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.health)
 	s.mux.HandleFunc("GET /readyz", s.ready)
 	s.mux.HandleFunc("GET /.well-known/webfinger", s.webfinger)
+	s.mux.HandleFunc("GET /.well-known/nodeinfo", s.nodeInfoDiscovery)
+	s.mux.HandleFunc("GET /nodeinfo/2.1", s.nodeInfo)
 	s.mux.HandleFunc("GET /users/{username}", s.actor)
 	s.mux.HandleFunc("GET /users/{username}/outbox", s.outbox)
 	s.mux.HandleFunc("GET /users/{username}/followers", s.followers)
@@ -85,6 +88,49 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready", "storage": "ready", "backend": "ready"})
+}
+
+func (s *Server) nodeInfoDiscovery(w http.ResponseWriter, _ *http.Request) {
+	baseURL := strings.TrimRight(s.cfg.PublicBaseURL, "/")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Vary", "Accept")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"links": []map[string]string{{
+			"rel":  "http://nodeinfo.diaspora.software/ns/schema/2.1",
+			"href": baseURL + "/nodeinfo/2.1",
+		}},
+	})
+}
+
+func (s *Server) nodeInfo(w http.ResponseWriter, _ *http.Request) {
+	// Do not publish fabricated user or activity counts. NodeInfo 2.1 permits
+	// an empty users object when an instance chooses not to disclose statistics.
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Vary", "Accept")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version": "2.1",
+		"software": map[string]string{
+			"name":    "testagram",
+			"version": nodeInfoSoftwareVersion(),
+		},
+		"protocols": []string{"activitypub"},
+		"services": map[string][]string{
+			"inbound":  []string{},
+			"outbound": []string{},
+		},
+		// Public registration is deliberately reported as closed until the
+		// canonical Backend registration journey is production-verified.
+		"openRegistrations": false,
+		"usage": map[string]any{"users": map[string]any{}},
+		"metadata": map[string]any{},
+	})
+}
+
+func nodeInfoSoftwareVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "unknown"
 }
 
 func (s *Server) webfinger(w http.ResponseWriter, r *http.Request) {
