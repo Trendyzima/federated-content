@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -141,6 +142,82 @@ func TestActivityPubContentTypeValidation(t *testing.T) {
 				t.Fatalf("isActivityPubContentType(%q)=%v want=%v", tc.value, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNodeInfoDiscoveryPublishesCanonicalSchemaLink(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/.well-known/nodeinfo", nil)
+	testServer().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("NodeInfo discovery status = %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.HasPrefix(recorder.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected JSON content type, got %q", recorder.Header().Get("Content-Type"))
+	}
+	var document struct {
+		Links []struct {
+			Rel  string `json:"rel"`
+			Href string `json:"href"`
+		} `json:"links"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
+		t.Fatalf("decode NodeInfo discovery: %v", err)
+	}
+	if len(document.Links) != 1 ||
+		document.Links[0].Rel != "http://nodeinfo.diaspora.software/ns/schema/2.1" ||
+		document.Links[0].Href != "https://federation.testagram.site/nodeinfo/2.1" {
+		t.Fatalf("unexpected NodeInfo discovery links: %+v", document.Links)
+	}
+	if recorder.Header().Get("Cache-Control") != "public, max-age=3600" {
+		t.Fatalf("unexpected discovery cache policy: %q", recorder.Header().Get("Cache-Control"))
+	}
+}
+
+func TestNodeInfoDocumentIsValidAndDoesNotInventUsageStatistics(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/nodeinfo/2.1", nil)
+	testServer().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("NodeInfo document status = %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	var document map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
+		t.Fatalf("decode NodeInfo document: %v", err)
+	}
+	if document["version"] != "2.1" {
+		t.Fatalf("NodeInfo schema version = %v, want 2.1", document["version"])
+	}
+	software, ok := document["software"].(map[string]any)
+	if !ok || software["name"] != "testagram" || software["version"] == "" {
+		t.Fatalf("invalid Testagram software identity: %+v", document["software"])
+	}
+	protocols, ok := document["protocols"].([]any)
+	if !ok || len(protocols) != 1 || protocols[0] != "activitypub" {
+		t.Fatalf("unexpected supported protocols: %+v", document["protocols"])
+	}
+	services, ok := document["services"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing NodeInfo services: %+v", document["services"])
+	}
+	for _, direction := range []string{"inbound", "outbound"} {
+		if entries, ok := services[direction].([]any); !ok || len(entries) != 0 {
+			t.Fatalf("services.%s must be an empty array until implemented: %+v", direction, services[direction])
+		}
+	}
+	if document["openRegistrations"] != false {
+		t.Fatalf("unverified public registration must not be advertised as open: %v", document["openRegistrations"])
+	}
+	usage, ok := document["usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing usage object: %+v", document["usage"])
+	}
+	users, ok := usage["users"].(map[string]any)
+	if !ok || len(users) != 0 {
+		t.Fatalf("user statistics must remain undisclosed rather than fabricated: %+v", usage["users"])
+	}
+	if _, ok := document["metadata"].(map[string]any); !ok {
+		t.Fatalf("missing metadata object: %+v", document["metadata"])
 	}
 }
 

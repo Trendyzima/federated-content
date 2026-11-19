@@ -103,7 +103,7 @@ func Load() (Config, error) {
 	if cfg.BackendInternalURL != "" {
 		backendURL, backendErr := url.Parse(cfg.BackendInternalURL)
 		if backendErr != nil || backendURL.Host == "" || backendURL.User != nil || backendURL.RawQuery != "" || backendURL.Fragment != "" ||
-			(backendURL.Scheme != "https" && !(backendURL.Scheme == "http" && (backendURL.Hostname() == "api" || backendURL.Hostname() == "localhost" || backendURL.Hostname() == "127.0.0.1"))) {
+			(backendURL.Scheme != "https" && !(backendURL.Scheme == "http" && (backendURL.Hostname() == "api" || backendURL.Hostname() == "testagram-backend-api" || backendURL.Hostname() == "localhost" || backendURL.Hostname() == "127.0.0.1"))) {
 			return Config{}, fmt.Errorf("BACKEND_INTERNAL_URL must be HTTPS (HTTP only for the private api or localhost service)")
 		}
 		if len(cfg.BackendInternalToken) < 32 || strings.ContainsAny(cfg.BackendInternalToken, "\r\n") {
