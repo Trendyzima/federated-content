@@ -213,6 +213,30 @@ func TestInboxWorkerRejectsMalformedEnableFlag(t *testing.T) {
 	}
 }
 
+func TestPrivateBackendAliasAcceptsCanonicalProductionNetworkAddress(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("BACKEND_INTERNAL_URL", "http://testagram-backend-api:8082")
+	t.Setenv("BACKEND_INTERNAL_TOKEN", "ci-private-backend-token-that-is-long-enough")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("canonical private Backend alias should be accepted: %v", err)
+	}
+	if cfg.BackendInternalURL != "http://testagram-backend-api:8082" {
+		t.Fatalf("Backend internal URL = %q", cfg.BackendInternalURL)
+	}
+}
+
+func TestPrivateBackendAliasRejectsUnknownPlainHTTPHost(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("BACKEND_INTERNAL_URL", "http://untrusted-api:8082")
+	t.Setenv("BACKEND_INTERNAL_TOKEN", "ci-private-backend-token-that-is-long-enough")
+	if _, err := Load(); err == nil {
+		t.Fatal("unknown plain-HTTP Backend host must remain rejected")
+	}
+}
+
 func TestInboxWorkerAcceptsCompletePrivateRuntimeConfig(t *testing.T) {
 	setValidEnvironment(t)
 	t.Setenv("FEDERATION_INBOX_WORKER_ENABLED", "true")
