@@ -1,6 +1,6 @@
 # Testagram Federated Content
 
-The ActivityPub protocol service for Testagram's six runtime repositories, coordinated by the separate API contract control plane.
+The ActivityPub protocol service in Testagram's six-runtime-repository platform. The seventh repository, `testagram-api`, governs shared contracts and release compatibility; it is not a runtime service.
 
 ## Six runtime repositories + API contract control plane
 
@@ -21,6 +21,43 @@ The runtime request path is:
 `testagram-api` is the contract control plane only; it is not in the runtime request path.
 
 Only the Testagram Flutter Client talks to users. Backend remains the authority for identity, post state, authorization, visibility, social graph and media ownership. The ranker returns ordering only; Backend must re-check access and hydrate canonical post data. Federation stores protocol state and must resolve local actors through Backend. Data Centre supplies infrastructure and durable media storage.
+
+
+## Canonical seven-repository circuit
+
+This repository is one organ of the Testagram platform. Its integration must follow the shared ownership map and release gates rather than creating a parallel identity, product-data or authorization system.
+
+| Platform organ | Canonical repository | Integration boundary |
+| --- | --- | --- |
+| Client | [testagram-flutter-client-](https://github.com/Trendyzima/testagram-flutter-client-) | Calls public Backend APIs and approved media URLs only; never calls this private service |
+| Identity and product authority | [Testagram-backend-](https://github.com/Trendyzima/Testagram-backend-) | Owns local actors, accounts, sessions, posts, consent, visibility and authorization; calls Federation through directional private credentials |
+| Infrastructure and durable storage | [Testagram-data-centre-](https://github.com/Trendyzima/Testagram-data-centre-) | Owns storage mechanics, processing, backups and recovery; does not become local identity authority |
+| Media delivery | [cdn-](https://github.com/Trendyzima/cdn-) | Delivers Backend-authorized bytes; does not infer visibility or ownership |
+| Protocol federation (this repository) | [federated-content](https://github.com/Trendyzima/federated-content) | Owns WebFinger, ActivityPub protocol state, signatures, inbox/outbox and remote delivery; resolves local actors and objects through Backend |
+| Feed ranking | [the-algorithm](https://github.com/Trendyzima/the-algorithm) | Ranks only Backend-authorized candidate IDs; never authorizes or hydrates records |
+| Contract and release governance | [testagram-api](https://github.com/Trendyzima/testagram-api) | Owns OpenAPI, private schemas, SDKs, immutable source pins and compatibility CI; never handles runtime product traffic |
+
+### Canonical integration references
+
+- [Seven-repository navigation and runtime dependency graph](https://github.com/Trendyzima/testagram-api/blob/main/docs/seven-repository-navigation.md)
+- [Machine-readable runtime service registry](https://github.com/Trendyzima/testagram-api/blob/main/contracts/registry/services.json)
+- [Immutable source pins and contract snapshots](https://github.com/Trendyzima/testagram-api/blob/main/contracts/sources.lock.json)
+- [Locked G0–G7 end-to-end acceptance gates](https://github.com/Trendyzima/testagram-api/blob/main/docs/integration/locked-seven-repository-acceptance.md)
+- [Backend-to-Federation ingress contract](https://github.com/Trendyzima/testagram-api/blob/main/contracts/internal/openapi/federation-ingress-v1.yaml)
+- [Federation-to-Backend provider contract](https://github.com/Trendyzima/testagram-api/blob/main/contracts/internal/openapi/backend-federation-provider-v1.yaml)
+- [Public ActivityPub contract](https://github.com/Trendyzima/testagram-api/blob/main/contracts/upstream/federation/public-activitypub.openapi.yaml)
+
+### Hard trust boundaries
+
+- Flutter never receives Federation service credentials or calls private Federation routes.
+- Backend-to-Federation and Federation-to-Backend credentials are independent, directional and server-only.
+- Federation never creates local Testagram users, changes local permissions, or treats remote identity as proof of a linked Testagram account.
+- A signed inbound activity is untrusted protocol input until signature, replay, actor eligibility, consent and Backend policy checks pass.
+- A durably accepted outbox event is not proof of remote delivery; delivery state, retries and dead letters remain observable and replay-safe.
+- Remote content remains separately namespaced and must pass Backend viewer-specific authorization before it is included in a feed or returned to Flutter.
+- The API control plane validates contracts and immutable source revisions; it is not a runtime gateway.
+
+The canonical API control-plane documents are release-governance references. They do not imply live DNS, deployed workers, successful peer delivery or production acceptance. Those require the corresponding G0–G7 evidence.
 
 ## Current implementation status
 
