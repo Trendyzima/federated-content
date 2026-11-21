@@ -6,9 +6,26 @@ services:
       - .env
     ports:
       - "127.0.0.1:8081:8081"
+    networks:
+      platform:
+        aliases:
+          - federation-api
+      egress: {}
     restart: unless-stopped
     read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+
+# The Backend stack creates these named networks. The internal platform
+# network provides private DNS/reachability to api:8080 and the Caddy
+# federation-api:8081 upstream. The separate egress network permits outbound
+# HTTPS delivery to remote ActivityPub peers without exposing the service port.
+networks:
+  platform:
+    external: true
+    name: testagram-platform
+  egress:
+    external: true
+    name: testagram-egress
