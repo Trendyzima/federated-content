@@ -1,6 +1,6 @@
 # Testagram Federation boundary
 
-Appwrite Auth is used by the canonical Go Backend to verify identity sessions. It is **not** the source of truth for Testagram product data. The Go Backend owns canonical local accounts, account links, profiles, posts, follows, blocks, visibility, permissions and media ownership in Backend-owned PostgreSQL. Appwrite Database must not be treated as the canonical product database.
+The canonical Go Backend issues and verifies Testagram-native user sessions against PostgreSQL session/account state. Backend-owned PostgreSQL is authoritative for local accounts, credentials, profiles, posts, follows, blocks, visibility, permissions and media ownership. No external identity or document-database provider is part of the Federation trust path.
 
 Federated Content is a protocol service, not an identity provider or product-data authority. It owns remote actor/key cache, signed ActivityPub ingress, protocol inbox/outbox records and delivery state in its own Federation PostgreSQL database. Local actors and eligibility must be resolved through the private Backend API; Federation must never create local accounts, infer account ownership from a handle, or grant local post access.
 
