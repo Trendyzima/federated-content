@@ -14,7 +14,7 @@ Federated Content owns ActivityPub protocol state and public protocol endpoints.
 Required headers: `Authorization`, `Content-Type: application/json`, `X-Testagram-API-Version: 1`, `X-Request-ID`, and `Idempotency-Key`.
 
 ## Backend dependencies
-Federation resolves local actors and reads public/non-sensitive post events through Backend private APIs. It never reads Appwrite/Neon directly, creates canonical local users/posts, or overrides Backend blocks, visibility, suspension, deletion or retention decisions.
+Federation resolves local actors and reads public/non-sensitive post events through Backend private APIs. It never reads Backend identity/product databases directly, creates canonical local users/posts, or overrides Backend blocks, visibility, suspension, deletion or retention decisions.
 
 Inbox acceptance is asynchronous: `202` confirms durable queue acceptance only. It does not claim that the activity has already been processed or delivered. The worker applies bounded retries and dead-letter handling.
 
