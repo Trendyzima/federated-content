@@ -1,0 +1,264 @@
+openapi: 3.1.0
+info:
+  title: Testagram Federation Private Backend Bridge
+  version: "1.0.0"
+  description: |
+    Private Backend-to-Federation contract. Backend is authoritative for local
+    identity, follows, visibility and viewer-specific authorization. Federation
+    only processes explicit Backend-authorized actor/activity inputs; it never
+    chooses a viewer's followed actors or creates local Testagram identities.
+servers:
+  - url: http://federation:8080
+    description: Private service network only; deployment-specific origin.
+security:
+  - federationServiceBearer: []
+paths:
+  /internal/v1/activities:
+    post:
+      operationId: enqueueAuthorizedActivity
+      summary: Durably enqueue a Backend-authorized ActivityPub activity
+      description: HTTP 202 means the activity and delivery jobs were durably accepted. Delivery is asynchronous and idempotency is keyed by activity_id.
+      parameters:
+        - $ref: '#/components/parameters/RequestID'
+        - $ref: '#/components/parameters/APIVersion'
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 2048 }
+          description: Correlation hint only; activity_id is authoritative for deduplication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishActivityRequest' }
+      responses:
+        '202':
+          description: Activity and delivery jobs durably accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublishActivityResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Backend did not authorize the local actor or actor URI. }
+        '409': { description: Activity ID collision or durable enqueue conflict. }
+        '413': { description: Request exceeds 1 MiB. }
+        '415': { description: Content-Type must be application/json. }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /internal/v1/remote-objects:
+    post:
+      operationId: listBackendAuthorizedRemoteObjects
+      summary: List public ActivityPub objects for a Backend-authorized actor allowlist
+      description: Backend supplies the actor URI allowlist after viewer-specific authorization. Federation returns only public or unlisted Note/Article objects belonging to that exact allowlist.
+      parameters:
+        - $ref: '#/components/parameters/RequestID'
+        - $ref: '#/components/parameters/APIVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RemoteObjectsRequest' }
+      responses:
+        '200':
+          description: Authorized remote object page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteObjectsResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: Request exceeds 32 KiB. }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /internal/v1/atproto/feed:
+    post:
+      operationId: listBackendAuthorizedATProtoAuthorFeeds
+      summary: Fetch public AT Protocol author feeds for a Backend-authorized DID allowlist
+      description: Backend supplies exact authorized DIDs and per-DID cursors. Federation returns only those authors' public Bluesky posts; it does not choose followed actors or apply Testagram viewer authorization.
+      parameters:
+        - $ref: '#/components/parameters/RequestID'
+        - $ref: '#/components/parameters/APIVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ATProtoFeedRequest' }
+      responses:
+        '200':
+          description: Public author feed pages for the supplied DIDs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ATProtoFeedResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: Request exceeds 16 KiB. }
+        '502': { description: A requested public author feed could not be retrieved. }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { description: Upstream author-feed request exceeded its time budget. }
+components:
+  securitySchemes:
+    federationServiceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Dedicated Backend-to-Federation service credential; private network only and never an end-user JWT.
+  parameters:
+    RequestID:
+      in: header
+      name: X-Request-ID
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    APIVersion:
+      in: header
+      name: X-Testagram-API-Version
+      required: false
+      schema: { type: string, const: "1" }
+  schemas:
+    Envelope:
+      type: object
+      required: [ok, data, error, request_id]
+      properties:
+        ok: { const: true }
+        error: { type: 'null' }
+        request_id: { type: string }
+    PublishActivityRequest:
+      type: object
+      additionalProperties: false
+      required: [activity_id, actor_user_id, activity]
+      properties:
+        activity_id: { type: string, minLength: 1, maxLength: 2048, format: uri, pattern: '^https://' }
+        actor_user_id: { type: string, minLength: 1, maxLength: 128 }
+        activity:
+          type: object
+          required: [id, type, actor, object]
+          properties:
+            id: { type: string, format: uri, pattern: '^https://' }
+            type: { type: string, enum: [Create, Update, Delete, Like, Announce] }
+            actor: { type: string, format: uri, pattern: '^https://' }
+            object: {}
+    PublishActivityResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [activity_id, recipient_count, accepted]
+              properties:
+                activity_id: { type: string, format: uri }
+                recipient_count: { type: integer, minimum: 0, maximum: 1000 }
+                accepted: { const: true }
+    RemoteObjectsRequest:
+      type: object
+      additionalProperties: false
+      required: [actor_uris]
+      properties:
+        actor_uris:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uri, pattern: '^https://' }
+        limit: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        cursor: { type: string, maxLength: 2048 }
+    RemoteObjectsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [source, items, next_cursor, has_more]
+              properties:
+                source: { type: string, const: activitypub }
+                items:
+                  type: array
+                  maxItems: 100
+                  items: { $ref: '#/components/schemas/RemoteObject' }
+                next_cursor: { type: string }
+                has_more: { type: boolean }
+    RemoteObject:
+      type: object
+      required: [object_uri, actor_uri, object_type, content, visibility, created_at]
+      properties:
+        object_uri: { type: string, format: uri, pattern: '^https://' }
+        actor_uri: { type: string, format: uri, pattern: '^https://' }
+        object_type: { type: string, enum: [Note, Article] }
+        content: { type: string, minLength: 1, maxLength: 20000 }
+        published_at: { type: [string, 'null'], format: date-time }
+        visibility: { type: string, enum: [public, unlisted] }
+        created_at: { type: string, format: date-time }
+    ATProtoFeedRequest:
+      type: object
+      additionalProperties: false
+      required: [actor_dids]
+      properties:
+        actor_dids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 12
+            maxLength: 512
+            pattern: '^did:(plc:[a-z2-7]{24}|web:[^ /?#@]+)$'
+        limit_per_actor: { type: integer, minimum: 1, maximum: 25, default: 10 }
+        cursors:
+          type: object
+          maxProperties: 20
+          additionalProperties: { type: string, maxLength: 512, pattern: '^[^\r\n]*$' }
+    ATProtoFeedResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [source, actors]
+              properties:
+                source: { type: string, const: bluesky-atproto }
+                actors:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items: { $ref: '#/components/schemas/ATProtoActorFeed' }
+    ATProtoActorFeed:
+      type: object
+      required: [did, handle, posts]
+      properties:
+        did: { type: string, minLength: 12, maxLength: 512 }
+        handle: { type: string, minLength: 1, maxLength: 253 }
+        cursor: { type: string, maxLength: 512 }
+        posts:
+          type: array
+          maxItems: 25
+          items: { $ref: '#/components/schemas/ATProtoPost' }
+    ATProtoPost:
+      type: object
+      required: [uri, cid, text, author, replyCount, repostCount, likeCount, quoteCount]
+      properties:
+        uri: { type: string, pattern: '^at://did:[^/]+/app\.bsky\.feed\.post/' }
+        cid: { type: string, minLength: 1, maxLength: 256 }
+        text: { type: string, maxLength: 20000 }
+        createdAt: { type: string }
+        indexedAt: { type: string }
+        author: { $ref: '#/components/schemas/ATProtoProfile' }
+        replyCount: { type: integer, format: int64, minimum: 0 }
+        repostCount: { type: integer, format: int64, minimum: 0 }
+        likeCount: { type: integer, format: int64, minimum: 0 }
+        quoteCount: { type: integer, format: int64, minimum: 0 }
+        labels:
+          type: array
+          items: { type: string, maxLength: 256 }
+    ATProtoProfile:
+      type: object
+      required: [did, handle]
+      properties:
+        did: { type: string, minLength: 12, maxLength: 512 }
+        handle: { type: string, minLength: 1, maxLength: 253 }
+        displayName: { type: string, maxLength: 256 }
+  responses:
+    BadRequest:
+      description: Invalid, unauthorized-to-viewer or out-of-bounds request envelope.
+    Unauthorized:
+      description: Missing or invalid private Backend service credential.
+    Unavailable:
+      description: Federation storage or upstream service unavailable.
