@@ -67,6 +67,31 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '413': { description: Request exceeds 32 KiB. }
         '503': { $ref: '#/components/responses/Unavailable' }
+  /internal/v1/remote-subscriptions/verify:
+    post:
+      operationId: verifyRemoteSubscriptionIdentity
+      summary: Resolve a remote ActivityPub or AT Protocol identity and verify the pending Backend subscription
+      description: Backend supplies the local owner and canonical protocol identity. Federation resolves the remote actor/DID using protocol-native rules and calls the private Backend verification callback. Client-supplied handles are never accepted as proof.
+      parameters:
+        - $ref: '#/components/parameters/RequestID'
+        - $ref: '#/components/parameters/APIVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RemoteSubscriptionVerificationRequest' }
+      responses:
+        '200':
+          description: Remote identity was verified and the exact pending owner/identity pair was persisted by Backend.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RemoteSubscriptionVerificationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: Request exceeds 16 KiB. }
+        '422': { description: ActivityPub actor could not be verified. }
+        '502': { description: Bluesky DID resolution or Backend verification callback failed. }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /internal/v1/atproto/feed:
     post:
       operationId: listBackendAuthorizedATProtoAuthorFeeds
@@ -185,6 +210,28 @@ components:
         published_at: { type: [string, 'null'], format: date-time }
         visibility: { type: string, enum: [public, unlisted] }
         created_at: { type: string, format: date-time }
+    RemoteSubscriptionVerificationRequest:
+      type: object
+      additionalProperties: false
+      required: [local_user_id, protocol, identity]
+      properties:
+        local_user_id: { type: string, format: uuid }
+        protocol: { type: string, enum: [activitypub, bluesky] }
+        identity: { type: string, minLength: 12, maxLength: 2048 }
+    RemoteSubscriptionVerificationResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [protocol, identity, handle, verification_status]
+              properties:
+                protocol: { type: string, enum: [activitypub, bluesky] }
+                identity: { type: string, minLength: 12, maxLength: 2048 }
+                handle: { type: string, minLength: 1, maxLength: 253 }
+                verification_status: { type: string, const: verified }
     ATProtoFeedRequest:
       type: object
       additionalProperties: false
