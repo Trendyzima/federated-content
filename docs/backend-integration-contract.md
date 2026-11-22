@@ -66,3 +66,19 @@ This document defines a contract proposal; it does not claim that the backend en
 ## Private API client usage
 
 The Federation service uses the Backend private API for actor discovery, readiness and durable published-post outbox polling. Every request carries the internal bearer, API version `1` and a unique request ID. Outbox polling uses bounded pages (`limit <= 99`) and persists `next_cursor` even when `has_more=false`, so the next poll can resume without replaying the entire event history. The Federation service never reads Backend PostgreSQL, native identity/session tables or user access tokens directly. It uses only the dedicated direction-specific Backend service bearer.
+
+
+## Private Backend bridge contract
+
+The complete private Backend-to-Federation HTTP contract is published at
+[`docs/internal/openapi/backend-private-v1.yaml`](internal/openapi/backend-private-v1.yaml).
+It covers durable ActivityPub activity enqueue, Backend-authorized ActivityPub
+remote-object pages, and Backend-authorized AT Protocol author feeds. All three
+operations require the dedicated Federation service bearer and are private
+service-to-service interfaces.
+
+Backend supplies actor allowlists and remains authoritative for viewer-specific
+follow, block, visibility and moderation decisions. Federation must not select
+followed actors on behalf of a viewer or create local Testagram identities.
+The API version and request ID headers are sent by the Backend client for
+correlation; they do not replace the dedicated bearer credential.
