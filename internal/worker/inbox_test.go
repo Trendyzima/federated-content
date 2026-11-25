@@ -227,3 +227,13 @@ func TestInboxWorkerRetriesFollowWhenBackendCanonicalWriteFails(t *testing.T) {
 		t.Fatalf("Backend write outage should be retryable: %#v", state.failed)
 	}
 }
+
+func TestParseActivityTimestampRequiresAuthenticatedOrderingTime(t *testing.T) {
+	if _, err := parseActivityTimestamp("", ""); err == nil {
+		t.Fatal("missing ActivityPub timestamp must not be replaced with local receipt time")
+	}
+	got, err := parseActivityTimestamp("", "2026-11-25T10:00:00Z")
+	if err != nil || !got.Equal(time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("valid published timestamp = %v, err=%v", got, err)
+	}
+}
