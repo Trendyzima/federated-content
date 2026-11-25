@@ -348,7 +348,7 @@ func parseActivityTimestamp(primary, fallback string) (time.Time, error) {
 		raw = strings.TrimSpace(fallback)
 	}
 	if raw == "" {
-		return time.Now().UTC(), nil
+		return time.Time{}, errors.New("ActivityPub activity timestamp is required")
 	}
 	parsed, err := time.Parse(time.RFC3339Nano, raw)
 	if err != nil {
