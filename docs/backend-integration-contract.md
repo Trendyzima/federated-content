@@ -82,3 +82,7 @@ follow, block, visibility and moderation decisions. Federation must not select
 followed actors on behalf of a viewer or create local Testagram identities.
 The API version and request ID headers are sent by the Backend client for
 correlation; they do not replace the dedicated bearer credential.
+
+## Identity-independent local account boundary
+
+Backend remains the sole authority for canonical local accounts, passwords, email verification, sessions, authorization and account status. Federation must never create, provision, approve or authenticate a local Testagram account, and must never require a government ID, ID number, selfie, identity evidence, manual identity review or identity approval for ordinary local signup/login or for normal remote-actor protocol processing. Federation's remote actor IDs, signatures and key verification are protocol trust—not government identity verification and not a substitute account-approval system. Federation outages, delivery queues and remote interoperability must not gate local account registration, email verification or login.
